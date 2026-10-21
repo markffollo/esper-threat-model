@@ -229,13 +229,23 @@ python3 scripts/scan_codebase.py /path/to/project    # outputs components.json
 
 - **Don't invent threats that don't apply to the code.** Every finding
   must cite specific file:line evidence. If you can't point to the code,
-  it's not a finding — it's a hypothesis. Mark it as such.
+  it's a hypothesis — not a finding. Mark it as such.
 - **The diagram is the foundation.** If the DFD is wrong, every finding
   downstream is wrong. The user gate between phases 1 and 2 is not
   optional.
 - **Don't skip the agentic detection.** Most vibe-coded apps today use
   LLMs. Vanilla STRIDE misses prompt injection, tool abuse, and output
   manipulation — the ASTRIDE extension catches these.
+- **Agentic = any LLM usage, not LLM + framework.** The scanner's
+  `is_agentic` flag must be `has_llm or has_agent_framework or any(tool
+  patterns)` — using `and` misses apps that call an LLM directly without
+  an agent framework wrapper. Any file that imports `openai`,
+  `anthropic`, or makes a `ChatCompletion` call is agentic.
+- **Dangerous sink regex must match `subprocess.\w+\(`.** The pattern
+  `(?:subprocess|os\.system|os\.popen)\s*\(` misses `subprocess.call()`
+  and `subprocess.run()` because the group matches the module name but
+  not the method call. Use `subprocess\.\w+\s*\(.*shell\s*=` to catch all
+  subprocess methods including `.call`, `.run`, `.Popen`, `.check_output`.
 - **DREAD is subjective but structured.** Score consistently using the
   rubric in `references/dread.md`. Don't inflate scores — a 3 is a 3.
 - **The scanner is a starting point, not the answer.** It finds
@@ -247,6 +257,11 @@ python3 scripts/scan_codebase.py /path/to/project    # outputs components.json
 - **Prioritize by exploitability, not just severity.** A Critical that
   requires internal network access is lower priority than a High that
   any internet user can hit. Note reachability in each finding.
+- **Verify scanner regex syntax before first run.** A single unbalanced
+  parenthesis in a pattern definition crashes the entire scanner with a
+  SyntaxError. Run `python3 -c "import re; [re.compile(p) for p in patterns]"`
+  or test the scanner against a small fixture before pointing it at a
+  real codebase.
 
 ## Verification
 
