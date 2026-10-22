@@ -221,17 +221,25 @@ python3 scripts/scan_codebase.py /path/to/project    # outputs components.json
     Completion: top findings have documented attack paths.
 
 12. **Generate the report — ONE polished HTML file, not split artifacts.**
-    The user wants a single executive-ready HTML report, not separate
-    markdown + DFD files. Shape:
+The user wants a single executive-ready HTML report, not separate
+markdown + DFD files. TEMPLATE FILE: `templates/report.html` — fill
+its `{{PLACEHOLDER}}`s and rewrite the architecture table + SVG for
+the target project. Finding labels are plain words: fid shows
+"Finding N" (never "F1"-style codes), rec `.ref` reads
+"Finding N · severity", inline refs say "Findings 3 and 4"
+(never "F3+F4"). Shape:
     - **Sticky compact top bar** (one short row): kicker "Threat Model" +
       `<app> — Threat Model Report` title + severity summary chips
       (N Critical / N High / N Medium / N Low) on the right; quiet meta
       line under it (repo, what the app is, STRIDE/DREAD, finding count).
       Keep it ~35px tall — a tall sticky header covers section tops while
       scrolling (the #1 layout complaint).
-    - **TL;DR card** directly under the header: 3-4 plain-English
-      sentences — what the app is, what the real risks are, whether fixes
-      are cheap. No jargon; reference finding IDs so claims stay traceable.
+    - **TL;DR card** directly under the header: ONE simple plain-English
+      sentence saying what the app is, then 3-4 high-level bullets (the
+      biggest risks with finding IDs, plus a closing note like "no server
+      to hack, all fixes are easy"). NO em dashes, no jargon, no
+      multi-clause run-ons. Layout: `{{ONE_SIMPLE_SENTENCE}}` followed by
+      a `ul.tldr` bullet list (see templates/report.html).
     - **Three sections, each a rounded container with a FULL colored
       border around it** (one accent color per section: architecture /
       findings / recommendations) + a very light inner tint of the same
