@@ -74,7 +74,7 @@ python3 scripts/scan_codebase.py /path/to/project    # outputs components.json
 
 # Phase 4: Recommendations
 # → concrete remediation with file:line references
-# → output threat-model.md + threat-model.yaml
+# → output threat-model-report.html (single polished report) + threat-model.yaml
 ```
 
 ## Procedure
@@ -120,10 +120,14 @@ python3 scripts/scan_codebase.py /path/to/project    # outputs components.json
    - Trust boundaries as dashed regions around component groups
    - A legend explaining colors and boundary types
    
-   Save to `<project-name>-dfd.html` in the workspace.
-   Deliver to user via `MEDIA:/path/to/file`.
+   Keep the DFD MINIMAL — the user reads it, not a scanner: ~6 nodes,
+   one line of subtext per node, no legend, no sub-components (drop
+   detail like separate OCR/Whisper boxes — that lives in findings).
+   In the final report the DFD embeds as a card inside section 01.
+   A separate `<project>-dfd.html` is only needed if the user asks for
+   the diagram standalone before the full run.
    
-   Completion: HTML file written, delivered inline.
+   Completion: DFD rendered, shown to user.
 
 4. **GATE — user confirms the diagram.** Present the DFD and ask:
    "Does this match your architecture? Anything missing, wrong, or
@@ -216,14 +220,48 @@ python3 scripts/scan_codebase.py /path/to/project    # outputs components.json
     
     Completion: top findings have documented attack paths.
 
-12. **Generate the report.** Write the full threat model to:
-    - `threat-model.md` — human-readable report (use
-      `templates/threat-model.md` as structure)
-    - `threat-model.yaml` — machine-readable (for CI/re-runs)
+12. **Generate the report — ONE polished HTML file, not split artifacts.**
+    The user wants a single executive-ready HTML report, not separate
+    markdown + DFD files. Shape:
+    - **Sticky compact top bar** (one short row): kicker "Threat Model" +
+      `<app> — Threat Model Report` title + severity summary chips
+      (N Critical / N High / N Medium / N Low) on the right; quiet meta
+      line under it (repo, what the app is, STRIDE/DREAD, finding count).
+      Keep it ~35px tall — a tall sticky header covers section tops while
+      scrolling (the #1 layout complaint).
+    - **TL;DR card** directly under the header: 3-4 plain-English
+      sentences — what the app is, what the real risks are, whether fixes
+      are cheap. No jargon; reference finding IDs so claims stay traceable.
+    - **Three sections, each a rounded container with a FULL colored
+      border around it** (one accent color per section: architecture /
+      findings / recommendations) + a very light inner tint of the same
+      color (~8% opacity), big bold section number + title + small
+      uppercase kicker (Blueprint / Risk register / Action plan).
+      01 Architecture & Summary (variant table, data-at-risk, embedded
+      minimal DFD, attack paths); 02 Findings ranked by DREAD with
+      severity-filter pill buttons + live "N of 8" counter; 03
+      Recommendations keyed to finding IDs.
+    - **Left sidebar tabs** (01/02/03), sticky, always visible while
+      scrolling, active tab highlighted in its section color. Two-line
+      tabs (big number + title + small subtitle) so the rail doesn't look
+      empty; rail ~215px.
+    - **Severity filter pills on BOTH section 02 AND section 03**
+      (recommendation cards carry `data-sev` = their finding's tier):
+      All / Critical / High / Medium / Low, each pill tinted in its
+      severity color when active, live `N of M` counter, independent
+      filter state per section. The template JS already handles both
+      (`apply` for findings, `applyG` for recs).
+    - **Fill `templates/report.html` — never hand-roll the report HTML.**
+      Copy it, replace `{{PLACEHOLDER}}`s (PROJECT, REPO,
+      PROJECT_DESC_PLAIN_ENGLISH, TLDR_PLAIN_ENGLISH, N_CRIT/HIGH/MED/LOW,
+      FINDINGS, RECOMMENDATIONS; the architecture table + SVG are a
+      worked example — rewrite for the target project), and deliver via
+      `::preview{file=...}`.
+    - Deliver inline via `::preview{file=...}`.
+    - `threat-model.yaml` — machine-readable copy (for CI/re-runs), kept
+      in the scan directory.
     
-    Deliver `threat-model.md` inline via `MEDIA:`.
-    
-    Completion: both files written, report delivered to user.
+    Completion: HTML report delivered inline, yaml written.
 
 ## Pitfalls
 
@@ -231,8 +269,17 @@ python3 scripts/scan_codebase.py /path/to/project    # outputs components.json
   must cite specific file:line evidence. If you can't point to the code,
   it's a hypothesis — not a finding. Mark it as such.
 - **The diagram is the foundation.** If the DFD is wrong, every finding
-  downstream is wrong. The user gate between phases 1 and 2 is not
-  optional.
+  downstream is wrong. The user gate between phases 1 and 2 is the
+  default, but the user may explicitly request diagram + STRIDE in one
+  pass — then proceed through all four phases in a single turn and say
+  so in the report instead of blocking. Never skip the gate silently.
+- **Classify the app type before trusting scanner buckets.** Read the
+  README / AI-instructions first and decide desktop app vs client/server
+  web app. The scanner infers "frontend/api_backend" from route regexes,
+  so a desktop app with no server gets misfiled into web-shaped components
+  and its `routes` findings are regex false positives (test-mock HTTP calls,
+  JSON config files). For a single-user desktop app the dominant boundaries
+  are process↔disk and machine↔external services, not Internet→Frontend→API.
 - **Don't skip the agentic detection.** Most vibe-coded apps today use
   LLMs. Vanilla STRIDE misses prompt injection, tool abuse, and output
   manipulation — the ASTRIDE extension catches these.
@@ -257,11 +304,51 @@ python3 scripts/scan_codebase.py /path/to/project    # outputs components.json
 - **Prioritize by exploitability, not just severity.** A Critical that
   requires internal network access is lower priority than a High that
   any internet user can hit. Note reachability in each finding.
+- **Delete `components.json` before re-running the scanner on the same
+tree.** The scanner walks every file in the target dir including its own
+previous output, so a re-scan feeds its own JSON back in as `routes`
+findings.
+- **Model every shipped variant.** Repos that ship multiple app variants
+  (e.g. an original baseline plus a rebuilt version) are two attack
+  surfaces: threat-model each and compare. "Fixed in v2 but still in the
+  shipped baseline" is a finding, not a footnote — name which variant
+  each finding applies to.
+- **Desktop LLM clients: user-configurable provider endpoint + key = key
+  exfiltration.** Grep for `base_url` / `host` resolution and check whether
+  the scheme is validated before attaching `Authorization`/`Bearer`.
+  Config-accepting apps send real keys to whatever host the config points
+  at, `http://` included.
 - **Verify scanner regex syntax before first run.** A single unbalanced
   parenthesis in a pattern definition crashes the entire scanner with a
   SyntaxError. Run `python3 -c "import re; [re.compile(p) for p in patterns]"`
   or test the scanner against a small fixture before pointing it at a
   real codebase.
+- **No colored left-stripe / top-rule-only card accents.** The user
+  calls that look "very AI". Sections get a full colored border around
+  the whole container; cards inside stay plainly bordered.
+- **Sticky-header layout math:** give sections `scroll-margin-top`
+  slightly larger than the header height, and keep the header one
+  compact row — otherwise section tops slide under the blurred bar and
+  the user reports content "hidden" while scrolling.
+- **Scroll-spy via IntersectionObserver desyncs on tall sections**
+  (the findings section spans several viewports, so no section
+  intersects the observer band and the tab never updates). Use a scroll
+  listener comparing `section.offsetTop` to a 35%-viewport line
+  instead.
+- **Verify generated HTML structurally after writing:** count div
+  open/close tags for balance, count finding/rec cards, check for
+  duplicate IDs — one quick python check catches the breakage that
+  visual review misses.
+- **Editing HTML containing unicode (arrows, middots) via terminal
+  python heredocs breaks string matching** — retyped literals diverge
+  from the file's actual characters. Either write the whole file fresh
+  via `cat > file <<'EOF'` (quoted delimiter, no shell expansion) or do
+  index-based surgery on strings read from the file; never retype the
+  content to match.
+- **After an external tool (terminal/python) edits a file, `write_file`
+  refuses to overwrite it** (stale-write guard) and terminal-run Claude
+  Code print-mode may fail auth quietly — check the process result
+  before claiming the work was done.
 
 ## Verification
 
@@ -271,5 +358,7 @@ python3 scripts/scan_codebase.py /path/to/project    # outputs components.json
 - If the app is agentic, A-category threats were evaluated
 - Vibe-code pattern checklist was completed
 - Top findings have traced attack paths
-- `threat-model.md` and `threat-model.yaml` both written and delivered
+- `threat-model-report.html` delivered inline (TL;DR, 3 bordered
+  sections, severity filter working, sidebar scroll-spy) and
+  `threat-model.yaml` written
 - No finding lacks a concrete remediation with file-level specificity
