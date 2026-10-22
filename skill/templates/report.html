@@ -105,6 +105,9 @@
   .card ul { padding-left: 1.1rem; }
   .card li { margin-bottom: 0.25rem; }
   .flow { color: var(--text) !important; }
+  .tldr { margin-top: 0.55rem; padding-left: 1.15rem; }
+  .tldr li { color: var(--muted); font-size: 13px; margin-bottom: 0.3rem; }
+  .tldr li::marker { color: var(--accent); }
   .callout { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 0.95rem 1.15rem; color: var(--muted); font-size: 13px; }
   .callout b { color: var(--text); }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -209,7 +212,13 @@
     <main>
 
       <div class="card" style="margin-bottom:2rem;">
-        <p style="font-size:13.5px; color:var(--text)"><b>TL;DR:</b> {{TLDR_PLAIN_ENGLISH: what the app is in plain words; why it is/isn't exposed to remote attackers; the real risks with finding IDs; whether fixes are hard or easy}}</p>
+        <p style="font-size:13.5px; color:var(--text)"><b>TL;DR:</b> {{ONE_SIMPLE_SENTENCE_PLAIN_ENGLISH}}</p>
+        <ul class="tldr">
+          <li>{{TLDR_BULLET_1: biggest risk in plain words + finding ID}}</li>
+          <li>{{TLDR_BULLET_2}}</li>
+          <li>{{TLDR_BULLET_3}}</li>
+          <li>{{TLDR_BULLET_LAST: e.g. no server to hack / fixes are easy}}</li>
+        </ul>
       </div>
 
       <!-- 01 ARCHITECTURE -->
