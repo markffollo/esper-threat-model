@@ -388,7 +388,9 @@ findings.
 - **Sticky-header layout math:** give sections `scroll-margin-top`
   slightly larger than the header height, and keep the header one
   compact row — otherwise section tops slide under the blurred bar and
-  the user reports content "hidden" while scrolling.
+  the user reports content "hidden" while scrolling. Same for the
+  sticky sidebar: hardcode `padding-top` on the sidebar (~1.1rem) so
+  the first tab clears the header instead of sliding under it.
 - **Scroll-spy via IntersectionObserver desyncs on tall sections**
   (the findings section spans several viewports, so no section
   intersects the observer band and the tab never updates). Use a scroll
