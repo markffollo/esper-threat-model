@@ -375,7 +375,7 @@
   findings.forEach(f => counts[f.dataset.sev] = (counts[f.dataset.sev] || 0) + 1);
   function apply(f) {
     findings.forEach(el => { el.style.display = (f === 'all' || el.dataset.sev === f) ? '' : 'none'; });
-    document.querySelectorAll('.fbtn').forEach(b => b.classList.toggle('on', b.dataset.f === f));
+    document.querySelectorAll('.fbtn[data-f]').forEach(b => b.classList.toggle('on', b.dataset.f === f));
     const totalF = findings.length;
     countEl.textContent = (f === 'all') ? totalF + ' of ' + totalF + ' findings' : counts[f] + ' of ' + totalF + ' \u00b7 ' + f;
   }
@@ -388,6 +388,7 @@
     document.querySelectorAll('.fbtn[data-g]').forEach(b => b.classList.toggle('on', b.dataset.g === g));
     gcountEl.textContent = (g === 'all') ? '7 of 7 recommendations' : gcounts[g] + ' of 7 · ' + g;
   }
+  document.querySelectorAll('.fbtn[data-f]').forEach(b => b.addEventListener('click', () => apply(b.dataset.f)));
   document.querySelectorAll('.fbtn[data-g]').forEach(b => b.addEventListener('click', () => applyG(b.dataset.g)));
   apply('all');
   applyG('all');
