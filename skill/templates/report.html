@@ -51,10 +51,16 @@
   .sidebar .label { font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); font-weight: 700; margin-bottom: 0.7rem; }
   .nav { display: flex; flex-direction: column; gap: 0.35rem; }
   .nav a {
-    display: grid; grid-template-columns: auto 1fr; column-gap: 0.7rem; align-items: center;
+    display: grid; grid-template-columns: auto 1fr; column-gap: 0.7rem; align-items: start;
     text-decoration: none; padding: 0.85rem 1rem; border-radius: 12px;
     border: 1px solid transparent; background: transparent;
     color: var(--muted); transition: all 0.15s ease;
+  }
+  .nav a .bullets { grid-column: 1 / -1; margin: 0.45rem 0 0 0; padding: 0; list-style: none; }
+  .nav a .bullets li { font-size: 11px; line-height: 1.45; padding-left: 0.9rem; position: relative; }
+  .nav a .bullets li::before {
+    content: ""; position: absolute; left: 0.15rem; top: 0.5em;
+    width: 4px; height: 4px; border-radius: 50%; background: var(--nc, var(--muted)); opacity: 0.7;
   }
   .nav a .num {
     font-family: ui-monospace, Menlo, monospace; font-size: 22px; font-weight: 800;
@@ -178,10 +184,25 @@
     <aside class="sidebar">
       <div class="label">Sections</div>
       <nav class="nav">
-        <a href="#s1" id="nav-s1"><span class="num">01</span><span class="t">Architecture<small>Blueprint</small></span></a>
-        <a href="#s2" id="nav-s2"><span class="num">02</span><span class="t">Findings<small>Risk register &middot; 8</small></span></a>
-        <a href="#s3" id="nav-s3"><span class="num">03</span><span class="t">Recommendations<small>Action plan</small></span></a>
-      </nav>
+        <a href="#s1" id="nav-s1"><span class="num">01</span><span class="t">Architecture<small>Blueprint</small></span>
+          <ul class="bullets">
+            <li>{{NAV1_BULLET_1}}</li>
+            <li>{{NAV1_BULLET_2}}</li>
+            <li>{{NAV1_BULLET_3}}</li>
+          </ul></a>
+        <a href="#s2" id="nav-s2"><span class="num">02</span><span class="t">Findings<small>Risk register &middot; {{N_TOTAL}}</small></span>
+          <ul class="bullets">
+            <li>Ranked by DREAD score</li>
+            <li>File:line evidence per finding</li>
+            <li>Filter by severity</li>
+          </ul></a>
+        <a href="#s3" id="nav-s3"><span class="num">03</span><span class="t">Recommendations<small>Action plan</small></span>
+          <ul class="bullets">
+            <li>Fixes keyed to finding IDs</li>
+            <li>Ordered by severity</li>
+            <li>Filter by severity</li>
+          </ul></a>
+        </nav>
     </aside>
 
     <!-- MAIN -->

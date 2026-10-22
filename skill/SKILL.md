@@ -243,8 +243,10 @@ python3 scripts/scan_codebase.py /path/to/project    # outputs components.json
       Recommendations keyed to finding IDs.
     - **Left sidebar tabs** (01/02/03), sticky, always visible while
       scrolling, active tab highlighted in its section color. Two-line
-      tabs (big number + title + small subtitle) so the rail doesn't look
-      empty; rail ~215px.
+      tabs (big number + title + small subtitle) PLUS three tiny bullet
+      points under each tab summarizing that section's content (fills the
+      empty rail space) — see `templates/report.html` nav markup.
+      Rail ~215px.
     - **Severity filter pills on BOTH section 02 AND section 03**
       (recommendation cards carry `data-sev` = their finding's tier):
       All / Critical / High / Medium / Low, each pill tinted in its
