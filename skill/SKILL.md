@@ -111,23 +111,20 @@ python3 scripts/scan_codebase.py /path/to/project    # outputs components.json
    Completion: enriched JSON with data types per flow, protocol per
    flow, auth enforcement status, agentic flag.
 
-3. **Generate the DFD.** Load the `architecture-diagram` skill
-   (`skill_view(name='architecture-diagram')` and its template at
-   `templates/template.html`). Generate an HTML file with:
-   - Each component as a colored box (frontend, backend, database,
-     cloud, security, external, AI/LLM)
-   - Each data flow as an arrow labeled with data type + protocol
-   - Trust boundaries as dashed regions around component groups
-   - A legend explaining colors and boundary types
+3. **Generate the DFD as inline SVG.** Render it directly as a card
+   inside `templates/report.html` (the `<svg>` block there is a worked
+   example to rewrite per project). Shape:
+   - Each component as a colored box, one bold title + one muted
+     subtext line
+   - Each data flow as an arrow labeled in plain words
+   - Trust boundaries as dashed regions with short caps labels
+   - 2-3 boundaries max, ~6-8 nodes max — the user reads it, not a
+     scanner. No dense grids, no per-node detail dumps; detail lives in
+     the architecture table and findings.
    
-   Keep the DFD MINIMAL — the user reads it, not a scanner: ~6 nodes,
-   one line of subtext per node, no legend, no sub-components (drop
-   detail like separate OCR/Whisper boxes — that lives in findings).
-   In the final report the DFD embeds as a card inside section 01.
-   A separate `<project>-dfd.html` is only needed if the user asks for
-   the diagram standalone before the full run.
-   
-   Completion: DFD rendered, shown to user.
+   Completion: DFD rendered inside the report file, shown to user.
+   (A separate standalone `<project>-dfd.html` is only needed if the
+   user asks for the diagram before the full run.)
 
 4. **GATE — user confirms the diagram.** Present the DFD and ask:
    "Does this match your architecture? Anything missing, wrong, or
@@ -234,6 +231,8 @@ the target project. Finding labels are plain words: fid shows
       line under it (repo, what the app is, STRIDE/DREAD, finding count).
       Keep it ~35px tall — a tall sticky header covers section tops while
       scrolling (the #1 layout complaint).
+    - **Meta line on TWO lines** (repo line 1, plain-English app
+      description line 2, `<br>` separated) for readability.
     - **TL;DR card** directly under the header: ONE simple plain-English
       sentence saying what the app is, then 3-4 high-level bullets (the
       biggest risks with finding IDs, plus a closing note like "no server
@@ -283,12 +282,17 @@ the target project. Finding labels are plain words: fid shows
   default, but the user may explicitly request diagram + STRIDE in one
   pass — then proceed through all four phases in a single turn and say
   so in the report instead of blocking. Never skip the gate silently.
-- **Classify the app type before trusting scanner buckets.** Read the
-  README / AI-instructions first and decide desktop app vs client/server
-  web app. The scanner infers "frontend/api_backend" from route regexes,
-  so a desktop app with no server gets misfiled into web-shaped components
-  and its `routes` findings are regex false positives (test-mock HTTP calls,
-  JSON config files). For a single-user desktop app the dominant boundaries
+- **Classify the app type before trusting scanner buckets — and before
+  trusting the repo name or the user's brief.** Read
+  `composer.json`/`package.json` requires and the README/PRD first: a
+  repo can look like a Laravel client/server web app and actually be a
+  NativePHP/Electron/Tauri desktop app, and a repo name or one-line brief
+  can describe a completely different product than the code ships. Then
+  decide desktop app vs client/server web app. The scanner infers
+  "frontend/api_backend" from route regexes, so a desktop app with no
+  networked server gets misfiled into web-shaped components and its
+  `routes` findings are regex false positives (test-mock HTTP calls, JSON
+  config files). For a single-user desktop app the dominant boundaries
   are process↔disk and machine↔external services, not Internet→Frontend→API.
 - **Don't skip the agentic detection.** Most vibe-coded apps today use
   LLMs. Vanilla STRIDE misses prompt injection, tool abuse, and output
@@ -328,6 +332,51 @@ findings.
   the scheme is validated before attaching `Authorization`/`Bearer`.
   Config-accepting apps send real keys to whatever host the config points
   at, `http://` included.
+- **Electron apps: read the trust map from three specific places before
+  anything else.** (1) the `webPreferences` block in the main window
+  creation (`nodeIntegration`, `contextIsolation`, `sandbox`,
+  `webviewTag`) — flags ON there are not findings, flags OFF there are;
+  (2) every preload script (`preload.js`, per-feature preloads like
+  browser-tab ones — they define what the renderer can reach);
+  (3) a full grep of `ipcMain.handle|ipcMain.on` as the actual boundary
+  inventory, then check each handler for path/env validation. Also check
+  `partition`/`preload` attributes set at runtime on `<webview>`
+  elements, and any `exec*` in the main process sourced from env or
+  PATH (login-shell sourcing, registry reads). These four reads produce
+  the whole trust-boundary model for an Electron app in one pass.
+- **NativePHP apps: read the trust map from four specific places.** A
+  repo requiring `nativephp/desktop` is a desktop app with a bundled
+  local Laravel server, not a web service. (1) `composer.json` requires
+  (ground truth for app type); (2) `config/nativephp.php` — the updater
+  ships enabled by default with env-key cloud storage (Spaces/S3/GitHub)
+  and no signature requirement, so whoever holds the update bucket keys
+  gets code execution on every install: that is the one real
+  Elevation/E finding, usually Medium (needs key compromise, not a
+  remote trigger) plus a note on unsigned updates; (3) the service
+  provider + listeners under `app/Providers`/`app/Listeners` (tray, menu,
+  window-opening paths — check for dev-only helper calls like `ds()`
+  from require-dev packages in the boot path: a `--no-dev` production
+  build fatals on them at startup); (4) `routes/web.php` — every route
+  is unauthenticated by design because the server binds to loopback;
+  score route findings as "other local processes/accounts can reach
+  this" (Medium ceiling), and never let the app bind the internal
+  server to a non-loopback interface. Session config rides plain HTTP:
+  `SESSION_ENCRYPT`/`SECURE` flags are the finding when anything
+  sensitive will ride those pages.
+- **Score IPC handlers as a chain, not as standalone holes.** A renderer-
+  reachable `ipcMain` handler that runs commands / merges env vars /
+  mkdirs arbitrary paths is only a Medium (second-step elevation: it
+  needs renderer code execution first, and contextIsolation is usually
+  on). Note the precondition in the finding and let the DFD attack path
+  show the chain — reporting it as Critical misrepresents reachability.
+- **For passphrase/PIN-gated sharing, the finding is the secret's
+  entropy policy, not whether crypto exists.** Apps hand-roll AES-GCM +
+  PBKDF2 correctly and still be exploitable because the user-chosen
+  secret is 4–8 digits: check the PIN/`passphrase` validation rules
+  (min/max length, charset), whether the same secret both encrypts the
+  connection code and answers the auth challenge, and whether a
+  captured code can be brute-forced offline. 'Well-built crypto, weak
+  key policy' is a real High finding.
 - **Verify scanner regex syntax before first run.** A single unbalanced
   parenthesis in a pattern definition crashes the entire scanner with a
   SyntaxError. Run `python3 -c "import re; [re.compile(p) for p in patterns]"`
@@ -349,6 +398,14 @@ findings.
   open/close tags for balance, count finding/rec cards, check for
   duplicate IDs — one quick python check catches the breakage that
   visual review misses.
+- **Plain English everywhere except Evidence lines.** The user rejects
+  jargon in report prose: rewrite tables as questions a non-engineer
+  would ask ("Where your AI account keys are kept", not "Credential
+  storage / DPAPI"), explain what a section IS before its detail, and
+  never ship a B1/B2/B3 trust-boundary list card — boundaries appear
+  in the DFD only, or the user reads the card as "random".
+- **No em dashes in report prose.** The user reads them as AI-style
+  padding; use commas, periods, or restructure the sentence.
 - **Editing HTML containing unicode (arrows, middots) via terminal
   python heredocs breaks string matching** — retyped literals diverge
   from the file's actual characters. Either write the whole file fresh
@@ -360,6 +417,13 @@ findings.
   Code print-mode may fail auth quietly — check the process result
   before claiming the work was done.
 
+## Maintenance
+
+This skill is published at github.com/markffollo/esper-threat-model
+(public); the repo's `skill/` dir mirrors the live skill directory.
+After any skill or template edit, sync the live dir to `skill/` and
+push — and say so, do not silently leave the repo stale.
+
 ## Verification
 
 - Every finding cites a specific file:line in the codebase
@@ -368,7 +432,9 @@ findings.
 - If the app is agentic, A-category threats were evaluated
 - Vibe-code pattern checklist was completed
 - Top findings have traced attack paths
-- `threat-model-report.html` delivered inline (TL;DR, 3 bordered
-  sections, severity filter working, sidebar scroll-spy) and
+- `threat-model-report.html` delivered inline (TL;DR as one sentence +
+  bullets, 3 bordered color-tinted sections, severity filters working
+  on BOTH findings and recommendations, sidebar scroll-spy, sticky
+  compact header, "Finding N" labels, no em dashes) and
   `threat-model.yaml` written
 - No finding lacks a concrete remediation with file-level specificity
