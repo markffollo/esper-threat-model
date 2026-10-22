@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StandUp Buddy — Threat Model Report</title>
+<style>
+  :root {
+    --bg: #0b0f14; --panel: #11161d; --panel2: #151b24;
+    --line: #232b36; --text: var(--foreground, #e8edf3); --muted: var(--muted-foreground, #8b98a8);
+    --accent: var(--accent, #22d3ee);
+    --crit: #fb7185; --high: #fb923c; --med: #fbbf24; --low: #94a3b8;
+    --c1: #22d3ee; --c2: #fb7185; --c3: #34d399;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: ui-sans-serif, -apple-system, "SF Pro Text", "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--text); padding: 1rem 1.5rem 3rem;
+    font-size: 14px; line-height: 1.55; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  code, .mono { font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 0.85em; }
+
+  /* sticky top bar */
+  .head {
+    position: sticky; top: 0; z-index: 60;
+    background: rgba(11,15,20,0.88);
+    -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--line);
+    margin: 0 -1.5rem 1.2rem; padding: 0.55rem 1.5rem;
+  }
+  .head .inner { max-width: 1080px; margin: 0 auto; }
+  .head .row { display: flex; align-items: baseline; gap: 0.7rem; flex-wrap: wrap; }
+  .kicker { color: var(--accent); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 700; }
+  h1 { font-size: 17px; font-weight: 800; letter-spacing: -0.01em; margin: 0; }
+  h1 .dash { color: var(--muted); font-weight: 600; }
+  .chips { margin-left: auto; display: flex; gap: 0.4rem; }
+  .chip { font-size: 10px; font-weight: 700; padding: 2px 9px; border-radius: 999px; letter-spacing: 0.04em; }
+  .chip.c-crit { background: var(--crit); color: #1a0d10; }
+  .chip.c-high { background: var(--high); color: #1a1108; }
+  .chip.c-med  { background: var(--med);  color: #1a1608; }
+  .chip.c-low  { background: var(--low);  color: #0b0f14; }
+  .meta { color: var(--muted); font-size: 11px; margin-top: 0.25rem; }
+
+  /* layout */
+  .layout { display: grid; grid-template-columns: 215px 1fr; gap: 2rem; align-items: start; }
+
+  /* sidebar tabs — sticky below the top bar, always visible */
+  .sidebar { position: sticky; top: 6.4rem; z-index: 40; padding-top: 0.9rem; }
+  .sidebar .label { font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); font-weight: 700; margin-bottom: 0.7rem; }
+  .nav { display: flex; flex-direction: column; gap: 0.35rem; }
+  .nav a {
+    display: grid; grid-template-columns: auto 1fr; column-gap: 0.7rem; align-items: start;
+    text-decoration: none; padding: 0.85rem 1rem; border-radius: 12px;
+    border: 1px solid transparent; background: transparent;
+    color: var(--muted); transition: all 0.15s ease;
+  }
+  .nav a .bullets { grid-column: 1 / -1; margin: 0.45rem 0 0 0; padding: 0; list-style: none; }
+  .nav a .bullets li { font-size: 11px; line-height: 1.45; padding-left: 0.9rem; position: relative; }
+  .nav a .bullets li::before {
+    content: ""; position: absolute; left: 0.15rem; top: 0.5em;
+    width: 4px; height: 4px; border-radius: 50%; background: var(--nc, var(--muted)); opacity: 0.7;
+  }
+  .nav a .num {
+    font-family: ui-monospace, Menlo, monospace; font-size: 22px; font-weight: 800;
+    opacity: 0.45; line-height: 1;
+  }
+  .nav a .t { font-weight: 700; font-size: 14.5px; line-height: 1.25; }
+  .nav a .t small { display: block; font-size: 10.5px; font-weight: 600; opacity: 0.65; margin-top: 0.15rem; }
+  .nav a:hover { color: var(--text); background: var(--panel); }
+  .nav a .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--nc, var(--muted)); flex-shrink: 0; margin-top: 0.35rem; }
+  .nav a.active .num { opacity: 1; color: var(--nc); }
+  .nav a.active { color: var(--text); background: var(--panel); border-color: var(--nc); }
+  .nav a.active .dot { box-shadow: 0 0 8px var(--nc); }
+  .nav a[href="#s1"] { --nc: var(--c1); } .nav a[href="#s2"] { --nc: var(--c2); } .nav a[href="#s3"] { --nc: var(--c3); }
+  @media (max-width: 820px) {
+    .layout { grid-template-columns: 1fr; }
+    .sidebar { position: static; margin-bottom: 1rem; }
+    .nav { flex-direction: row; flex-wrap: wrap; }
+  }
+
+  /* sections: full colored border around everything */
+  .section {
+    border: 1.5px solid var(--sc); border-radius: 18px;
+    padding: 1.6rem 1.7rem; margin-bottom: 2.2rem;
+    background: var(--sc-tint);
+    scroll-margin-top: 5.4rem;
+    box-shadow: 0 0 24px -12px var(--sc-glow);
+  }
+  .sec1 { --sc: #22d3ee; --sc-tint: rgba(34,211,238,0.08); --sc-glow: rgba(34,211,238,0.35); }
+  .sec2 { --sc: #fb7185; --sc-tint: rgba(251,113,133,0.08); --sc-glow: rgba(251,113,133,0.35); }
+  .sec3 { --sc: #34d399; --sc-tint: rgba(52,211,153,0.08); --sc-glow: rgba(52,211,153,0.35); }
+
+  .sec-head { display: flex; align-items: baseline; gap: 0.85rem; margin-bottom: 0.35rem; }
+  .sec-head .num { font-size: 27px; font-weight: 800; letter-spacing: -0.03em; color: var(--sc); }
+  .sec-head h2 { font-size: 21px; font-weight: 800; letter-spacing: -0.02em; color: var(--text); }
+  .sec-head .lbl { margin-left: auto; font-size: 10.5px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--sc); font-weight: 700; align-self: center; padding-bottom: 5px; }
+  .sec-sub { color: var(--muted); font-size: 12.5px; padding-bottom: 1rem; border-bottom: 1px solid var(--line); margin-bottom: 1.25rem; }
+
+  /* cards */
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1.05rem 1.2rem; margin-bottom: 0.9rem; }
+  .card h3 { font-size: 13.5px; font-weight: 700; margin-bottom: 0.35rem; }
+  .card p, .card li { color: var(--muted); font-size: 13px; }
+  .card ul { padding-left: 1.1rem; }
+  .card li { margin-bottom: 0.25rem; }
+  .flow { color: var(--text) !important; }
+  .tldr { margin-top: 0.55rem; padding-left: 1.15rem; }
+  .tldr li { color: var(--muted); font-size: 13px; margin-bottom: 0.3rem; }
+  .tldr li::marker { color: var(--accent); }
+  .callout { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 0.95rem 1.15rem; color: var(--muted); font-size: 13px; }
+  .callout b { color: var(--text); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--line); }
+  td { padding: 0.55rem 0.6rem; border-bottom: 1px solid var(--line); color: var(--muted); }
+  td:first-child { color: var(--text); font-weight: 600; }
+
+  /* severity filter */
+  .filters { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1.15rem; }
+  .filters .flabel { font-size: 10.5px; letter-spacing: 0.13em; text-transform: uppercase; color: var(--muted); font-weight: 700; margin-right: 0.35rem; }
+  .fbtn {
+    font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer;
+    padding: 0.3rem 0.85rem; border-radius: 999px; border: 1px solid var(--line);
+    background: var(--bg); color: var(--muted); transition: all 0.15s ease;
+  }
+  .fbtn:hover { color: var(--text); border-color: var(--muted); }
+  .fbtn.on { color: #0b0f14; background: var(--fc); border-color: var(--fc); }
+  .fbtn[data-f="all"].on { --fc: var(--text); }
+  .fbtn[data-f="critical"].on { --fc: var(--crit); }
+  .fbtn[data-f="high"].on { --fc: var(--high); }
+  .fbtn[data-f="medium"].on { --fc: var(--med); }
+  .fbtn[data-f="low"].on { --fc: var(--low); }
+  .fcount { margin-left: auto; font-size: 11.5px; color: var(--muted); }
+
+  /* findings */
+  .badge { display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; padding: 2px 9px; border-radius: 999px; text-transform: uppercase; }
+  .b-crit { color: #1a0d10; background: var(--crit); } .b-high { color: #1a1108; background: var(--high); }
+  .b-med { color: #1a1608; background: var(--med); } .b-low { color: #0b0f14; background: var(--low); }
+  .pill { display: inline-block; font-size: 11px; color: var(--sc); border: 1px solid var(--line); border-radius: 999px; padding: 1px 9px; margin-right: 6px; font-family: ui-monospace, Menlo, monospace; }
+
+  .finding { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1.05rem 1.2rem; margin-bottom: 0.85rem; display: grid; grid-template-columns: 46px 1fr 145px; gap: 1rem; align-items: start; }
+  @media (max-width: 640px) { .finding { grid-template-columns: 1fr; } }
+  .fid { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--muted); padding-top: 2px; }
+  .f-body h3 { font-size: 14.5px; font-weight: 700; margin-bottom: 0.3rem; }
+  .f-body .tags { margin-bottom: 0.45rem; }
+  .f-body p { color: var(--muted); font-size: 13px; margin-bottom: 0.45rem; }
+  .ev { color: var(--muted); font-size: 12px; }
+  .ev b { color: var(--text); font-weight: 600; }
+  .f-score { text-align: right; }
+  @media (max-width: 640px) { .f-score { text-align: left; } }
+  .score { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+  .s-crit { color: var(--crit); } .s-high { color: var(--high); } .s-med { color: var(--med); } .s-low { color: var(--low); }
+  .scorelbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; }
+  .bar { height: 4px; border-radius: 2px; background: var(--line); margin-top: 6px; overflow: hidden; }
+  .bar > div { height: 100%; border-radius: 2px; }
+
+  /* recs */
+  .rec { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 0.9rem 1.15rem; margin-bottom: 0.8rem; }
+  .rec h3 { font-size: 13.5px; font-weight: 700; margin-bottom: 0.3rem; }
+  .rec p { color: var(--muted); font-size: 13px; }
+  .rec .ref { color: var(--c3); font-size: 12px; margin-bottom: 0.35rem; font-family: ui-monospace, Menlo, monospace; font-weight: 600; }
+
+  .foot { text-align: center; color: var(--muted); font-size: 11.5px; opacity: 0.7; margin-top: 0.5rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="head"><div class="inner">
+    <div class="row">
+      <div class="kicker">Threat Model</div>
+      <h1>StandUp Buddy <span class="dash">&mdash; Threat Model Report</span></h1>
+      <div class="chips">
+        <span class="chip c-med">4 Medium</span>
+        <span class="chip c-low">2 Low</span>
+      </div>
+    </div>
+    <div class="meta">Repo: github.com/Maxiviper117/standup-buddy<br>
+      Single-user standing-desk reminder tray app built with NativePHP (Laravel 13 + Electron + Svelte/Inertia)<br>
+      STRIDE + DREAD &middot; 6 findings &middot; scanned 2026-10-21</div>
+  </div></div>
+
+  <div class="layout">
+
+    <!-- SIDEBAR TABS -->
+    <aside class="sidebar">
+      <nav class="nav">
+        <a href="#s1" id="nav-s1"><span class="num">01</span><span class="t">Architecture<small>Blueprint</small></span>
+          <ul class="bullets">
+            <li>Desktop tray app, not a web service</li>
+            <li>One internal server, one local database</li>
+            <li>Auto-updater is the only internet link</li>
+          </ul></a>
+        <a href="#s2" id="nav-s2"><span class="num">02</span><span class="t">Findings<small>Risk register &middot; 6</small></span>
+          <ul class="bullets">
+            <li>Ranked by DREAD score</li>
+            <li>File:line evidence per finding</li>
+            <li>Filter by severity</li>
+          </ul></a>
+        <a href="#s3" id="nav-s3"><span class="num">03</span><span class="t">Recommendations<small>Action plan</small></span>
+          <ul class="bullets">
+            <li>Fixes keyed to finding IDs</li>
+            <li>Ordered by severity</li>
+            <li>Filter by severity</li>
+          </ul></a>
+      </nav>
+    </aside>
+
+    <!-- MAIN -->
+    <main>
+
+      <div class="card" style="margin-bottom:2rem;">
+        <p style="font-size:13.5px; color:var(--text)"><b>TL;DR:</b> StandUp Buddy is a small desktop tray app that reminds desk workers when to stand and sit, and its real risks are almost all in the packaging, not the app logic.</p>
+        <ul class="tldr">
+          <li>The auto-updater is switched on by default and will run whatever lands in the linked cloud storage, so a leaked update key turns into remote code on every install (Finding 1, medium).</li>
+          <li>The app template ships with debug mode on, and the one POST route can be looped by any local program to flood windows on screen (Findings 2 and 3, medium).</li>
+          <li>Nothing sensitive is stored yet: settings live only in memory and reset on restart, and there is no login, team data, or network API to steal.</li>
+          <li>Every fix here is a one-file config or cleanup change, no redesign needed.</li>
+        </ul>
+      </div>
+
+      <!-- 01 ARCHITECTURE -->
+      <section class="section sec1" id="s1">
+        <div class="sec-head"><span class="num">01</span><h2>Architecture &amp; Summary</h2><span class="lbl">Blueprint</span></div>
+        <div class="sec-sub">What StandUp Buddy is, how it is built, and where the trust boundaries sit.</div>
+
+        <div class="card">
+          <p style="margin-bottom:0.7rem">Despite the repo name, this is <b style="color:var(--text)">not a team standup-order web app</b>. It is a NativePHP desktop app: an Electron shell with a system tray and menu bar, running a local Laravel server on your machine, with Svelte pages shown through Inertia. The PRD calls it a lightweight tray app that reminds people with adjustable standing desks when to stand up and sit back down. The six pages are settings screens only, their values live in memory, and nothing is saved to the database or local storage, so every setting resets when the app restarts. There is no login system in use, no team feature, and no randomizer anywhere.</p>
+          <table>
+            <tr><th>What the app does</th><th>Where it lives</th></tr>
+            <tr><td>Reminds you to stand and sit (presets, intervals, working hours)</td><td>Svelte settings pages: <span class="mono">resources/js/pages/General.svelte</span>, <span class="mono">Timing.svelte</span></td></tr>
+            <tr><td>Tray icon with menu and "Open Window" item</td><td>Electron shell: <span class="mono">app/Providers/NativeAppServiceProvider.php</span></td></tr>
+            <tr><td>Serves the pages over plain HTTP on your own machine</td><td>Local Laravel server: <span class="mono">routes/web.php</span></td></tr>
+            <tr><td>Stores sessions, cache and queue jobs (no user data yet)</td><td>SQLite file: <span class="mono">DB_CONNECTION=sqlite</span>, <span class="mono">SESSION_DRIVER=database</span></td></tr>
+            <tr><td>Checks for and installs app updates</td><td>NativePHP updater: <span class="mono">config/nativephp.php</span>, enabled by default</td></tr>
+          </table>
+        </div>
+
+        <div class="card">
+          <h3>Data at risk &mdash; what actually moves through the app, in plain words</h3>
+          <ul>
+            <li>Your sit/stand schedule preferences (today: only in memory, lost on restart)</li>
+            <li>Session and CSRF cookies between the window and the local server, plain HTTP</li>
+            <li>Update packages your machine downloads and runs from cloud storage</li>
+            <li>Nothing else: no accounts, no meeting data, no team data, no third-party API calls</li>
+          </ul>
+        </div>
+
+        <div class="card" style="margin-top:1.4rem; padding:1.1rem 1.15rem 1.25rem">
+          <h3 style="margin-bottom:0.75rem">Data Flow Diagram</h3>
+          <svg viewBox="0 0 960 400" style="width:100%;display:block">
+            <defs>
+              <marker id="ah" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0, 9 3.5, 0 7" fill="#8b98a8"/></marker>
+            </defs>
+            <rect x="15" y="25" width="600" height="365" rx="14" fill="rgba(52,211,153,0.03)" stroke="#34d399" stroke-width="1" stroke-dasharray="7,5" opacity="0.6"/>
+            <text x="32" y="45" fill="#34d399" font-size="9.5" font-weight="700" opacity="0.8">YOUR MACHINE</text>
+            <rect x="640" y="25" width="305" height="120" rx="14" fill="rgba(251,191,36,0.03)" stroke="#fbbf24" stroke-width="1" stroke-dasharray="7,5" opacity="0.6"/>
+            <text x="657" y="45" fill="#fbbf24" font-size="9.5" font-weight="700" opacity="0.8">INTERNET</text>
+            <rect x="60" y="70" width="150" height="52" rx="9" fill="rgba(139,152,168,0.08)" stroke="#8b98a8" stroke-width="1.1"/>
+            <text x="135" y="92" fill="#e8edf3" font-size="11" font-weight="700" text-anchor="middle">You</text>
+            <text x="135" y="106" fill="#8b98a8" font-size="9" text-anchor="middle">clicks tray + pages</text>
+            <rect x="265" y="70" width="150" height="52" rx="9" fill="rgba(34,211,238,0.07)" stroke="#22d3ee" stroke-width="1.3"/>
+            <text x="340" y="92" fill="#e8edf3" font-size="11" font-weight="700" text-anchor="middle">Tray + menu bar</text>
+            <text x="340" y="106" fill="#8b98a8" font-size="9" text-anchor="middle">Electron main</text>
+            <rect x="470" y="70" width="130" height="52" rx="9" fill="rgba(34,211,238,0.07)" stroke="#22d3ee" stroke-width="1.3"/>
+            <text x="535" y="92" fill="#e8edf3" font-size="11" font-weight="700" text-anchor="middle">App window</text>
+            <text x="535" y="106" fill="#8b98a8" font-size="9" text-anchor="middle">Svelte pages</text>
+            <rect x="265" y="180" width="200" height="60" rx="9" fill="rgba(251,113,133,0.07)" stroke="#fb7185" stroke-width="1.4"/>
+            <text x="365" y="202" fill="#e8edf3" font-size="11" font-weight="700" text-anchor="middle">Internal Laravel server</text>
+            <text x="365" y="217" fill="#8b98a8" font-size="9" text-anchor="middle">127.0.0.1, plain HTTP</text>
+            <text x="365" y="230" fill="#fb7185" font-size="8.5" text-anchor="middle" opacity="0.85">no auth on any route</text>
+            <rect x="510" y="180" width="105" height="60" rx="9" fill="rgba(167,139,250,0.07)" stroke="#a78bfa" stroke-width="1.2"/>
+            <text x="562" y="205" fill="#e8edf3" font-size="11" font-weight="700" text-anchor="middle">SQLite</text>
+            <text x="562" y="220" fill="#8b98a8" font-size="9" text-anchor="middle">sessions, cache</text>
+            <rect x="60" y="180" width="140" height="60" rx="9" fill="rgba(139,152,168,0.08)" stroke="#8b98a8" stroke-width="1.1"/>
+            <text x="130" y="205" fill="#e8edf3" font-size="11" font-weight="700" text-anchor="middle">Other local</text>
+            <text x="130" y="220" fill="#8b98a8" font-size="9" text-anchor="middle">programs / users</text>
+            <rect x="700" y="70" width="210" height="56" rx="9" fill="rgba(251,191,36,0.06)" stroke="#fbbf24" stroke-width="1.4"/>
+            <text x="805" y="92" fill="#e8edf3" font-size="11" font-weight="700" text-anchor="middle">Update storage</text>
+            <text x="805" y="107" fill="#fbbf24" font-size="9" text-anchor="middle">Spaces / S3, updater ON</text>
+            <line x1="210" y1="96" x2="263" y2="96" stroke="#22d3ee" stroke-width="1.3" marker-end="url(#ah)"/>
+            <line x1="415" y1="122" x2="300" y2="178" stroke="#22d3ee" stroke-width="1.3" marker-end="url(#ah)"/>
+            <text x="330" y="150" fill="#8b98a8" font-size="8.5" text-anchor="middle">open window</text>
+            <line x1="535" y1="122" x2="450" y2="178" stroke="#22d3ee" stroke-width="1.3" marker-end="url(#ah)"/>
+            <text x="505" y="152" fill="#8b98a8" font-size="8.5" text-anchor="middle">pages + POSTs</text>
+            <line x1="502" y1="210" x2="508" y2="210" stroke="#a78bfa" stroke-width="0"/>
+            <line x1="465" y1="210" x2="506" y2="210" stroke="#a78bfa" stroke-width="1.3" marker-end="url(#ah)"/>
+            <text x="486" y="202" fill="#a78bfa" font-size="8.5" text-anchor="middle">reads/writes</text>
+            <line x1="200" y1="205" x2="262" y2="205" stroke="#fb7185" stroke-width="1.3" stroke-dasharray="5,4" marker-end="url(#ah)"/>
+            <text x="231" y="198" fill="#fb7185" font-size="8.5" text-anchor="middle">can reach the port</text>
+            <line x1="465" y1="240" x2="800" y2="126" stroke="#fbbf24" stroke-width="1.4" marker-end="url(#ah)"/>
+            <text x="700" y="185" fill="#fbbf24" font-size="8.5" text-anchor="middle">downloads updates, runs them</text>
+          </svg>
+        </div>
+
+        <div class="card">
+          <h3>Attack paths (top findings) &mdash; plain-English chains: attacker action, then exploit, then access, then impact</h3>
+          <ul>
+            <li class="flow">Finding 1: attacker gets the cloud storage keys for the update bucket, uploads a poisoned update, every user's updater downloads and runs it, attacker has code running on all installs.</li>
+            <li class="flow">Findings 2 and 3: a malicious program already on your machine scans localhost, finds the internal server, reads a debug error page for file paths and settings, then loops the open-window route to flood windows on screen.</li>
+            <li class="flow">Finding 4: another local account reads the SQLite sessions table and replays your cookie against the local server.</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- 02 FINDINGS -->
+      <section class="section sec2" id="s2">
+        <div class="sec-head"><span class="num">02</span><h2>Findings &mdash; STRIDE</h2><span class="lbl">Risk register</span></div>
+        <div class="sec-sub">6 findings ranked by DREAD score. Evidence cites file:line in the clone. All four phases ran in one pass at the requester's instruction; the usual diagram confirmation gate was skipped by request, not silently.</div>
+
+        <div class="filters">
+          <span class="flabel">Filter</span>
+          <button class="fbtn on" data-f="all">All</button>
+          <button class="fbtn" data-f="critical">Critical</button>
+          <button class="fbtn" data-f="high">High</button>
+          <button class="fbtn" data-f="medium">Medium</button>
+          <button class="fbtn" data-f="low">Low</button>
+          <span class="fcount" id="fcount"></span>
+        </div>
+
+        <div class="finding" data-sev="medium">
+          <div class="fid">Finding 1</div>
+          <div class="f-body">
+            <div class="tags"><span class="pill">E &middot; elevation</span><span class="badge b-med">Medium</span></div>
+            <h3>Auto-updater is on by default and runs whatever lands in the update bucket</h3>
+            <p>The updater ships enabled (<span class="mono">NATIVEPHP_UPDATER_ENABLED</span> defaults true) and pulls from cloud storage. The app has no signed-update check, and the build cleanup list only strips the storage keys out of the bundled settings file, not off the developer machine. Whoever controls the update path can push code to every install.</p>
+            <p class="ev"><b>Evidence:</b> config/nativephp.php:102 (enabled default), :109 (spaces provider), :63-78 (cleanup_env_keys)</p>
+          </div>
+          <div class="f-score">
+            <div class="score s-med">5.6</div>
+            <div class="scorelbl">DREAD</div>
+            <div class="bar"><div style="width:56%;background:var(--med)"></div></div>
+          </div>
+        </div>
+
+        <div class="finding" data-sev="medium">
+          <div class="fid">Finding 2</div>
+          <div class="f-body">
+            <div class="tags"><span class="pill">I &middot; disclosure</span><span class="badge b-med">Medium</span></div>
+            <h3>Debug mode ships on in the settings template</h3>
+            <p>The example environment file sets APP_ENV to local and APP_DEBUG to true. If that file is carried into a production bundle, any error on the internal server renders a full debug page with stack traces, source snippets and environment values to whoever can reach the port. The framework default is off, so this only bites when the template values survive into the build.</p>
+            <p class="ev"><b>Evidence:</b> .env.example:2,4 &middot; config/app.php:42 (fallback false)</p>
+          </div>
+          <div class="f-score">
+            <div class="score s-med">5.4</div>
+            <div class="scorelbl">DREAD</div>
+            <div class="bar"><div style="width:54%;background:var(--med)"></div></div>
+          </div>
+        </div>
+
+        <div class="finding" data-sev="medium">
+          <div class="fid">Finding 3</div>
+          <div class="f-body">
+            <div class="tags"><span class="pill">S/D &middot; spoof + DoS</span><span class="badge b-med">Medium</span></div>
+            <h3>Anyone on the machine can spam the route that opens new windows</h3>
+            <p>POST /open-window opens an 800 by 800 window with no login check and no rate limit. Remote web pages are blocked by CSRF, but any local program can load a page first to grab the token, then loop the request to spawn unlimited windows. Nuisance and spoofing, no data exposure.</p>
+            <p class="ev"><b>Evidence:</b> routes/web.php:17 &middot; app/Http/Controllers/GeneralController.php:19-25 &middot; app/Actions/OpenWindow.php:10-23</p>
+          </div>
+          <div class="f-score">
+            <div class="score s-med">5.2</div>
+            <div class="scorelbl">DREAD</div>
+            <div class="bar"><div style="width:52%;background:var(--med)"></div></div>
+          </div>
+        </div>
+
+        <div class="finding" data-sev="medium">
+          <div class="fid">Finding 4</div>
+          <div class="f-body">
+            <div class="tags"><span class="pill">S &middot; session</span><span class="badge b-med">Medium</span></div>
+            <h3>Session cookie rides plain HTTP and is stored unencrypted</h3>
+            <p>Session encryption is off and no Secure flag is set, while the window and the local server talk plain HTTP. The cookie also sits in cleartext in the SQLite sessions file. Only session and CSRF state is at stake today, since the app saves no user data, but any future feature would inherit this surface.</p>
+            <p class="ev"><b>Evidence:</b> .env.example:31-33 &middot; config/session.php:63 &middot; SESSION_DRIVER=database</p>
+          </div>
+          <div class="f-score">
+            <div class="score s-med">4.0</div>
+            <div class="scorelbl">DREAD</div>
+            <div class="bar"><div style="width:40%;background:var(--med)"></div></div>
+          </div>
+        </div>
+
+        <div class="finding" data-sev="low">
+          <div class="fid">Finding 5</div>
+          <div class="f-body">
+            <div class="tags"><span class="pill">D/I &middot; crash + leak</span><span class="badge b-low">Low</span></div>
+            <h3>Debug calls from a dev-only package sit in the startup path</h3>
+            <p>The app boot code and both menu bar listeners call ds(), which comes from a dev-only package (laradumps). A production build without dev dependencies hits an undefined function during startup and the app may not launch at all. With dev dependencies present, debug payloads are shipped to a local debug socket.</p>
+            <p class="ev"><b>Evidence:</b> app/Providers/NativeAppServiceProvider.php:22 &middot; app/Listeners/HandleMenuBarClick.php:12 &middot; composer.json:21 (require-dev)</p>
+          </div>
+          <div class="f-score">
+            <div class="score s-low">3.8</div>
+            <div class="scorelbl">DREAD</div>
+            <div class="bar"><div style="width:38%;background:var(--low)"></div></div>
+          </div>
+        </div>
+
+        <div class="finding" data-sev="low">
+          <div class="fid">Finding 6</div>
+          <div class="f-body">
+            <div class="tags"><span class="pill">E &middot; open surface</span><span class="badge b-low">Low</span></div>
+            <h3>Every page and endpoint is served with no login at all</h3>
+            <p>All six pages plus the health check are public, the User account model exists but is unused, and there are no login routes. That is normal shape for a single-user tray app bound to your own machine, but it means anything else that can reach the port, like another account on a shared Windows box, can read every page and drive every POST. Listed as reachability context for Findings 2 and 3, not a standalone bug.</p>
+            <p class="ev"><b>Evidence:</b> routes/web.php:11-17 &middot; app/Models/User.php (scaffolded, unused)</p>
+          </div>
+          <div class="f-score">
+            <div class="score s-low">3.8</div>
+            <div class="scorelbl">DREAD</div>
+            <div class="bar"><div style="width:38%;background:var(--low)"></div></div>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- 03 RECOMMENDATIONS -->
+      <section class="section sec3" id="s3">
+        <div class="sec-head"><span class="num">03</span><h2>Recommendations</h2><span class="lbl">Action plan</span></div>
+        <div class="sec-sub">Concrete fixes keyed to finding IDs, ordered by severity.</div>
+
+        <div class="filters">
+          <span class="flabel">Filter</span>
+          <button class="fbtn on" data-g="all">All</button>
+          <button class="fbtn" data-g="critical">Critical</button>
+          <button class="fbtn" data-g="high">High</button>
+          <button class="fbtn" data-g="medium">Medium</button>
+          <button class="fbtn" data-g="low">Low</button>
+          <span class="fcount" id="gcount"></span>
+        </div>
+
+        <div class="rec" data-sev="medium">
+          <div class="ref">Finding 1 &middot; medium</div>
+          <h3>Turn the updater off until updates are signed</h3>
+          <p>In <span class="mono">config/nativephp.php</span>, set the enabled default to <span class="mono">false</span> (<span class="mono">'enabled' =&gt; env('NATIVEPHP_UPDATER_ENABLED', false)</span>) and keep it off until you have code signing plus signature verification on downloaded packages. Rotate the Spaces or S3 keys and never keep them in the repo.</p>
+        </div>
+
+        <div class="rec" data-sev="medium">
+          <div class="ref">Finding 2 &middot; medium</div>
+          <h3>Make debug mode impossible to ship</h3>
+          <p>Build with <span class="mono">APP_DEBUG=false</span> and <span class="mono">APP_ENV=production</span>, and add <span class="mono">APP_DEBUG</span> to the <span class="mono">cleanup_env_keys</span> list in <span class="mono">config/nativephp.php:63</span> so a bundled settings file can never carry it as true. Add a build step check that fails if debug is on.</p>
+        </div>
+
+        <div class="rec" data-sev="medium">
+          <div class="ref">Finding 3 &middot; medium</div>
+          <h3>Drop the HTTP window-opening route</h3>
+          <p>The tray menu path already opens the window without HTTP (NativeAppServiceProvider and HandleOpenWindowMenuItem). Delete <span class="mono">Route::post('/open-window', ...)</span> from <span class="mono">routes/web.php:17</span>. If a route is ever needed, add rate limiting (<span class="mono">-&gt;middleware('throttle:...')</span>) and scope it to the menu event.</p>
+        </div>
+
+        <div class="rec" data-sev="medium">
+          <div class="ref">Finding 4 &middot; medium</div>
+          <h3>Encrypt the session cookie and lock the database file</h3>
+          <p>Set <span class="mono">SESSION_ENCRYPT=true</span> in the bundled environment, and make sure <span class="mono">database.sqlite</span> and <span class="mono">storage/</span> are created with owner-only permissions (0600/0700). Until then, keep anything sensitive out of these pages.</p>
+        </div>
+
+        <div class="rec" data-sev="low">
+          <div class="ref">Finding 5 &middot; low</div>
+          <h3>Strip the dev debug calls from boot and listeners</h3>
+          <p>Remove the <span class="mono">ds()</span> calls in <span class="mono">NativeAppServiceProvider.php:22</span>, <span class="mono">HandleMenuBarClick.php:12</span> and <span class="mono">HandleMenuBarDoubleClick.php:14</span>, or wrap them in <span class="mono">if (app()-&gt;environment('local'))</span>. Then verify a <span class="mono">composer install --no-dev</span> production build boots cleanly.</p>
+        </div>
+
+        <div class="rec" data-sev="low">
+          <div class="ref">Finding 6 &middot; low</div>
+          <h3>Keep the internal server loopback-only, delete the unused auth scaffold or use it</h3>
+          <p>Never bind the internal Laravel server to a non-loopback address. Decide on the unused <span class="mono">User</span> model: either remove the scaffolded auth files to shrink the surface, or wire login in before any multi-user or shared-machine feature is added.</p>
+        </div>
+
+      <div class="callout" style="margin-top:1.2rem">
+          <b>Clean surfaces:</b> no <span class="mono">eval</span>, shell, or SQL string-concatenation sinks anywhere in the app code, no LLM usage (ASTRIDE evaluated, not applicable), no file upload handling, and no third-party API calls besides the updater. The scanner's "web API" bucket was a false positive on framework config paths, corrected by reading the code. The dominant risks are packaging defaults, not app logic.
+        </div>
+      </section>
+
+      <div class="foot">StandUp Buddy &middot; STRIDE / DREAD threat model &middot; machine copy: threat-model.yaml</div>
+    </main>
+  </div>
+</div>
+
+<script>
+  // scroll-spy: highlight the sidebar tab for the section in view
+  const links = { s1: document.getElementById('nav-s1'), s2: document.getElementById('nav-s2'), s3: document.getElementById('nav-s3') };
+  const secs = ['s1','s2','s3'].map(id => document.getElementById(id));
+  function spy() {
+    let cur = 0;
+    const y = window.scrollY + window.innerHeight * 0.35;
+    secs.forEach((sec, i) => { if (sec.offsetTop <= y) cur = i; });
+    Object.values(links).forEach(a => a.classList.remove('active'));
+    links['s' + (cur + 1)].classList.add('active');
+  }
+  window.addEventListener('scroll', spy, { passive: true });
+  spy();
+
+  // severity filter
+  const findings = [...document.querySelectorAll('.finding')];
+  const countEl = document.getElementById('fcount');
+  const counts = {};
+  findings.forEach(f => counts[f.dataset.sev] = (counts[f.dataset.sev] || 0) + 1);
+  function apply(f) {
+    findings.forEach(el => { el.style.display = (f === 'all' || el.dataset.sev === f) ? '' : 'none'; });
+    document.querySelectorAll('.fbtn[data-f]').forEach(b => b.classList.toggle('on', b.dataset.f === f));
+    const totalF = findings.length;
+    countEl.textContent = (f === 'all') ? totalF + ' of ' + totalF + ' findings' : (counts[f] || 0) + ' of ' + totalF + ' \u00b7 ' + f;
+  }
+  const recs = [...document.querySelectorAll('.rec')];
+  const gcountEl = document.getElementById('gcount');
+  const gcounts = {};
+  recs.forEach(r => gcounts[r.dataset.sev] = (gcounts[r.dataset.sev] || 0) + 1);
+  function applyG(g) {
+    recs.forEach(el => { el.style.display = (g === 'all' || el.dataset.sev === g) ? '' : 'none'; });
+    document.querySelectorAll('.fbtn[data-g]').forEach(b => b.classList.toggle('on', b.dataset.g === g));
+    const totalG = recs.length;
+    gcountEl.textContent = (g === 'all') ? totalG + ' of ' + totalG + ' recommendations' : (gcounts[g] || 0) + ' of ' + totalG + ' \u00b7 ' + g;
+  }
+  document.querySelectorAll('.fbtn[data-f]').forEach(b => b.addEventListener('click', () => apply(b.dataset.f)));
+  document.querySelectorAll('.fbtn[data-g]').forEach(b => b.addEventListener('click', () => applyG(b.dataset.g)));
+  apply('all');
+  applyG('all');
+</script>
+</body>
+</html>

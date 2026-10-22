@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>tolink — Threat Model Report</title>
+<style>
+  :root {
+    --bg: #0b0f14; --panel: #11161d; --panel2: #151b24;
+    --line: #232b36; --text: var(--foreground, #e8edf3); --muted: var(--muted-foreground, #8b98a8);
+    --accent: var(--accent, #22d3ee);
+    --crit: #fb7185; --high: #fb923c; --med: #fbbf24; --low: #94a3b8;
+    --c1: #22d3ee; --c2: #fb7185; --c3: #34d399;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: ui-sans-serif, -apple-system, "SF Pro Text", "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--text); padding: 1rem 1.5rem 3rem;
+    font-size: 14px; line-height: 1.55; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  code, .mono { font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 0.85em; }
+
+  /* sticky top bar */
+  .head {
+    position: sticky; top: 0; z-index: 60;
+    background: rgba(11,15,20,0.88);
+    -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--line);
+    margin: 0 -1.5rem 1.2rem; padding: 0.55rem 1.5rem;
+  }
+  .head .inner { max-width: 1080px; margin: 0 auto; }
+  .head .row { display: flex; align-items: baseline; gap: 0.7rem; flex-wrap: wrap; }
+  .kicker { color: var(--accent); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 700; }
+  h1 { font-size: 17px; font-weight: 800; letter-spacing: -0.01em; margin: 0; }
+  h1 .dash { color: var(--muted); font-weight: 600; }
+  .chips { margin-left: auto; display: flex; gap: 0.4rem; }
+  .chip { font-size: 10px; font-weight: 700; padding: 2px 9px; border-radius: 999px; letter-spacing: 0.04em; }
+  .chip.c-crit { background: var(--crit); color: #1a0d10; }
+  .chip.c-high { background: var(--high); color: #1a1108; }
+  .chip.c-med  { background: var(--med);  color: #1a1608; }
+  .chip.c-low  { background: var(--low);  color: #0b0f14; }
+  .meta { color: var(--muted); font-size: 11px; margin-top: 0.25rem; }
+
+  /* layout */
+  .layout { display: grid; grid-template-columns: 215px 1fr; gap: 2rem; align-items: start; }
+
+  /* sidebar tabs */
+  .sidebar { position: sticky; top: 3.4rem; z-index: 40; padding-top: 2.4rem; }
+  .nav { display: flex; flex-direction: column; gap: 0.35rem; }
+  .nav a {
+    display: grid; grid-template-columns: auto 1fr; column-gap: 0.7rem; align-items: start;
+    text-decoration: none; padding: 0.85rem 1rem; border-radius: 12px;
+    border: 1px solid transparent; background: transparent;
+    color: var(--muted); transition: all 0.15s ease;
+  }
+  .nav a .bullets { grid-column: 1 / -1; margin: 0.45rem 0 0 0; padding: 0; list-style: none; }
+  .nav a .bullets li { font-size: 11px; line-height: 1.45; padding-left: 0.9rem; position: relative; }
+  .nav a .bullets li::before {
+    content: ""; position: absolute; left: 0.15rem; top: 0.5em;
+    width: 4px; height: 4px; border-radius: 50%; background: var(--nc, var(--muted)); opacity: 0.7;
+  }
+  .nav a .num {
+    font-family: ui-monospace, Menlo, monospace; font-size: 22px; font-weight: 800;
+    opacity: 0.45; line-height: 1;
+  }
+  .nav a .t { font-weight: 700; font-size: 14.5px; line-height: 1.25; }
+  .nav a .t small { display: block; font-size: 10.5px; font-weight: 600; opacity: 0.65; margin-top: 0.15rem; }
+  .nav a:hover { color: var(--text); background: var(--panel); }
+  .nav a .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--nc, var(--muted)); flex-shrink: 0; margin-top: 0.35rem; }
+  .nav a.active .num { opacity: 1; color: var(--nc); }
+  .nav a.active { color: var(--text); background: var(--panel); border-color: var(--nc); }
+  .nav a.active .dot { box-shadow: 0 0 8px var(--nc); }
+  .nav a[href="#s1"] { --nc: var(--c1); } .nav a[href="#s2"] { --nc: var(--c2); } .nav a[href="#s3"] { --nc: var(--c3); }
+  @media (max-width: 820px) {
+    .layout { grid-template-columns: 1fr; }
+    .sidebar { position: static; margin-bottom: 1rem; }
+    .nav { flex-direction: row; flex-wrap: wrap; }
+  }
+
+  /* sections: full colored border around everything */
+  .section {
+    border: 1.5px solid var(--sc); border-radius: 18px;
+    padding: 1.6rem 1.7rem; margin-bottom: 2.2rem;
+    background: var(--sc-tint);
+    scroll-margin-top: 3rem;
+    box-shadow: 0 0 24px -12px var(--sc-glow);
+  }
+  .sec1 { --sc: #22d3ee; --sc-tint: rgba(34,211,238,0.08); --sc-glow: rgba(34,211,238,0.35); }
+  .sec2 { --sc: #fb7185; --sc-tint: rgba(251,113,133,0.08); --sc-glow: rgba(251,113,133,0.35); }
+  .sec3 { --sc: #34d399; --sc-tint: rgba(52,211,153,0.08); --sc-glow: rgba(52,211,153,0.35); }
+
+  .sec-head { display: flex; align-items: baseline; gap: 0.85rem; margin-bottom: 0.35rem; }
+  .sec-head .num { font-size: 27px; font-weight: 800; letter-spacing: -0.03em; color: var(--sc); }
+  .sec-head h2 { font-size: 21px; font-weight: 800; letter-spacing: -0.02em; color: var(--text); }
+  .sec-head .lbl { margin-left: auto; font-size: 10.5px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--sc); font-weight: 700; align-self: center; padding-bottom: 5px; }
+  .sec-sub { color: var(--muted); font-size: 12.5px; padding-bottom: 1rem; border-bottom: 1px solid var(--line); margin-bottom: 1.25rem; }
+
+  /* cards */
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1.05rem 1.2rem; margin-bottom: 0.9rem; }
+  .card h3 { font-size: 13.5px; font-weight: 700; margin-bottom: 0.35rem; }
+  .card p, .card li { color: var(--muted); font-size: 13px; }
+  .card ul { padding-left: 1.1rem; }
+  .card li { margin-bottom: 0.25rem; }
+  .flow { color: var(--text) !important; }
+  .tldr { margin-top: 0.55rem; padding-left: 1.15rem; }
+  .tldr li { color: var(--muted); font-size: 13px; margin-bottom: 0.3rem; }
+  .tldr li::marker { color: var(--accent); }
+  .callout { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 0.95rem 1.15rem; color: var(--muted); font-size: 13px; }
+  .callout b { color: var(--text); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--line); }
+  td { padding: 0.55rem 0.6rem; border-bottom: 1px solid var(--line); color: var(--muted); }
+  td:first-child { color: var(--text); font-weight: 600; }
+
+  /* severity filter */
+  .filters { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1.15rem; }
+  .filters .flabel { font-size: 10.5px; letter-spacing: 0.13em; text-transform: uppercase; color: var(--muted); font-weight: 700; margin-right: 0.35rem; }
+  .fbtn {
+    font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer;
+    padding: 0.3rem 0.85rem; border-radius: 999px; border: 1px solid var(--line);
+    background: var(--bg); color: var(--muted); transition: all 0.15s ease;
+  }
+  .fbtn:hover { color: var(--text); border-color: var(--muted); }
+  .fbtn.on { color: #0b0f14; background: var(--fc); border-color: var(--fc); }
+  .fbtn[data-f="all"].on { --fc: var(--text); }
+  .fbtn[data-f="critical"].on { --fc: var(--crit); }
+  .fbtn[data-f="high"].on { --fc: var(--high); }
+  .fbtn[data-f="medium"].on { --fc: var(--med); }
+  .fbtn[data-f="low"].on { --fc: var(--low); }
+  .fcount { margin-left: auto; font-size: 11.5px; color: var(--muted); }
+
+  /* findings */
+  .badge { display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; padding: 2px 9px; border-radius: 999px; text-transform: uppercase; }
+  .b-crit { color: #1a0d10; background: var(--crit); } .b-high { color: #1a1108; background: var(--high); }
+  .b-med { color: #1a1608; background: var(--med); } .b-low { color: #0b0f14; background: var(--low); }
+  .pill { display: inline-block; font-size: 11px; color: var(--sc); border: 1px solid var(--line); border-radius: 999px; padding: 1px 9px; margin-right: 6px; font-family: ui-monospace, Menlo, monospace; }
+
+  .finding { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1.05rem 1.2rem; margin-bottom: 0.85rem; display: grid; grid-template-columns: 46px 1fr 145px; gap: 1rem; align-items: start; }
+  @media (max-width: 640px) { .finding { grid-template-columns: 1fr; } }
+  .fid { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--muted); padding-top: 2px; }
+  .f-body h3 { font-size: 14.5px; font-weight: 700; margin-bottom: 0.3rem; }
+  .f-body .tags { margin-bottom: 0.45rem; }
+  .f-body p { color: var(--muted); font-size: 13px; margin-bottom: 0.45rem; }
+  .ev { color: var(--muted); font-size: 12px; }
+  .ev b { color: var(--text); font-weight: 600; }
+  .f-score { text-align: right; }
+  @media (max-width: 640px) { .f-score { text-align: left; } }
+  .score { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+  .s-crit { color: var(--crit); } .s-high { color: var(--high); } .s-med { color: var(--med); } .s-low { color: var(--low); }
+  .scorelbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; }
+  .bar { height: 4px; border-radius: 2px; background: var(--line); margin-top: 6px; overflow: hidden; }
+  .bar > div { height: 100%; border-radius: 2px; }
+
+  /* recs */
+  .rec { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 0.9rem 1.15rem; margin-bottom: 0.8rem; }
+  .rec h3 { font-size: 13.5px; font-weight: 700; margin-bottom: 0.3rem; }
+  .rec p { color: var(--muted); font-size: 13px; }
+  .rec .ref { color: var(--c3); font-size: 12px; margin-bottom: 0.35rem; font-family: ui-monospace, Menlo, monospace; font-weight: 600; }
+
+  .foot { text-align: center; color: var(--muted); font-size: 11.5px; opacity: 0.7; margin-top: 0.5rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="head"><div class="inner">
+    <div class="row">
+      <div class="kicker">Threat Model</div>
+      <h1>tolink <span class="dash">&mdash; Threat Model Report</span></h1>
+      <div class="chips">
+        <span class="chip c-high">3 High</span>
+        <span class="chip c-med">4 Medium</span>
+        <span class="chip c-low">1 Low</span>
+      </div>
+    </div>
+    <div class="meta">Repo: github.com/tuantoquq/tolink<br>A URL shortener: a website where you paste a long link and get a short one back, with click counts and QR codes. Go backend, TypeScript front end, PostgreSQL database, Redis cache.</div>
+  </div></div>
+
+  <div class="layout">
+
+    <!-- SIDEBAR TABS -->
+    <aside class="sidebar">
+      <nav class="nav">
+        <a href="#s1" id="nav-s1"><span class="num">01</span><span class="t">Architecture<small>Blueprint</small></span>
+          <ul class="bullets">
+            <li>Browser, API, database, cache, redirect</li>
+            <li>Three trust zones, one diagram</li>
+            <li>Attack paths in plain words</li>
+          </ul></a>
+        <a href="#s2" id="nav-s2"><span class="num">02</span><span class="t">Findings<small>Risk register &middot; 8</small></span>
+          <ul class="bullets">
+            <li>Ranked by DREAD score</li>
+            <li>File:line evidence per finding</li>
+            <li>Filter by severity</li>
+          </ul></a>
+        <a href="#s3" id="nav-s3"><span class="num">03</span><span class="t">Recommendations<small>Action plan</small></span>
+          <ul class="bullets">
+            <li>Fixes keyed to finding IDs</li>
+            <li>Ordered by severity</li>
+            <li>Filter by severity</li>
+          </ul></a>
+      </nav>
+    </aside>
+
+    <!-- MAIN -->
+    <main>
+
+      <div class="card" style="margin-bottom:2rem;">
+        <p style="font-size:13.5px; color:var(--text)"><b>TL;DR:</b> tolink is a small URL shortener that works, but it lets strangers read, create, and misuse short links more than the README implies, and its default setup ships with weak passwords and no encryption.</p>
+        <ul class="tldr">
+          <li>Anyone, without logging in, can look up any short link's destination by guessing its number, and can create links that point anywhere on the web (Findings 1 and 4).</li>
+          <li>The shipped default passwords are weak and well known, and the database and Redis ports are exposed to the host machine (Finding 2).</li>
+          <li>If the default login-token secret is left unchanged, anyone can forge a valid login token for any user (Finding 3).</li>
+          <li>All eight findings have easy, local fixes: change defaults, add one ownership check, and tighten validation. No redesign needed.</li>
+        </ul>
+      </div>
+
+      <!-- 01 ARCHITECTURE -->
+      <section class="section sec1" id="s1">
+        <div class="sec-head"><span class="num">01</span><h2>Architecture &amp; Summary</h2><span class="lbl">Blueprint</span></div>
+        <div class="sec-sub">What tolink is, how it is built, and where the trust boundaries sit.</div>
+
+        <div class="card">
+          <p style="margin-bottom:0.7rem">One app, four moving parts. A React front end talks to a Go API; the API reads and writes PostgreSQL, uses Redis to make redirects fast, and sends visitors' browsers on to whatever web address was stored. Questions a non-engineer would ask, answered from the code (not the README):</p>
+          <table>
+            <tr><th></th><th>What the code actually does</th></tr>
+            <tr><td>Who can create a short link</td><td>Anyone, logged in or not. Guest links are not tied to any account, so nobody can manage or delete them.</td></tr>
+            <tr><td>Who can look up where a link goes</td><td>Anyone. The lookup endpoints only check ownership if you happen to be logged in, so guests get full access (Finding 1).</td></tr>
+            <tr><td>What the login token protects</td><td>Only four things: listing your own links, deleting a link, seeing your account, and changing your password. Everything else works without it.</td></tr>
+            <tr><td>Where links are allowed to point</td><td>Any http or https address, including addresses inside a private network. No block list (Finding 4).</td></tr>
+            <tr><td>Does the API fetch the target itself</td><td>No. It only sends the visitor's browser there. So there is no server-side request forgery (SSRF) path; the risk is redirect and phishing abuse.</td></tr>
+            <tr><td>Are database and cache encrypted</td><td>No. The database connection is built with <span class="mono">sslmode=disable</span>, Redis has no password at all, and both containers publish their ports to the host (Findings 2 and 6).</td></tr>
+          </table>
+        </div>
+
+        <div class="card">
+          <h3>Data at risk, the sensitive data that moves through the app, in plain words</h3>
+          <ul>
+            <li>Every long web address people shorten, some of which contain login codes or private file links</li>
+            <li>Account email addresses and bcrypt password hashes (good hashing, cost 12)</li>
+            <li>Visitor tracking per click: IP address, browser type, and the page they came from, kept forever</li>
+            <li>Login tokens (JWT) stored in the browser's localStorage, where any script on the page can read them (Finding 7)</li>
+          </ul>
+        </div>
+
+        <div class="card" style="margin-top:1.4rem; padding:1.1rem 1.15rem 1.25rem">
+          <h3 style="margin-bottom:0.75rem">Data Flow Diagram</h3>
+          <svg viewBox="0 0 960 400" style="width:100%;display:block">
+            <defs>
+              <marker id="ah" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0, 9 3.5, 0 7" fill="#8b98a8"/></marker>
+            </defs>
+            <!-- boundary: your server -->
+            <rect x="15" y="25" width="620" height="350" rx="14" fill="rgba(34,211,238,0.03)" stroke="#22d3ee" stroke-width="1" stroke-dasharray="7,5" opacity="0.6"/>
+            <text x="32" y="45" fill="#22d3ee" font-size="9.5" font-weight="700" opacity="0.8">SERVER (DOCKER COMPOSE)</text>
+            <!-- boundary: outside world -->
+            <rect x="655" y="25" width="290" height="150" rx="14" fill="rgba(251,191,36,0.03)" stroke="#fbbf24" stroke-width="1" stroke-dasharray="7,5" opacity="0.6"/>
+            <text x="672" y="45" fill="#fbbf24" font-size="9.5" font-weight="700" opacity="0.8">OUTSIDE WORLD</text>
+            <!-- browser node -->
+            <rect x="672" y="70" width="250" height="70" rx="9" fill="rgba(251,191,36,0.06)" stroke="#fbbf24" stroke-width="1.3"/>
+            <text x="797" y="95" fill="#e8edf3" font-size="11.5" font-weight="700" text-anchor="middle">Visitor's browser</text>
+            <text x="797" y="112" fill="#8b98a8" font-size="9" text-anchor="middle">React app &middot; JWT in localStorage</text>
+            <text x="797" y="126" fill="#fb7185" font-size="8.5" text-anchor="middle" opacity="0.85">token readable by any script</text>
+            <!-- nginx/frontend -->
+            <rect x="330" y="60" width="170" height="52" rx="9" fill="rgba(34,211,238,0.07)" stroke="#22d3ee" stroke-width="1.3"/>
+            <text x="415" y="82" fill="#e8edf3" font-size="11" font-weight="700" text-anchor="middle">nginx front end</text>
+            <text x="415" y="97" fill="#8b98a8" font-size="9" text-anchor="middle">port 80, plain HTTP</text>
+            <!-- API -->
+            <rect x="330" y="165" width="170" height="66" rx="9" fill="rgba(34,211,238,0.07)" stroke="#22d3ee" stroke-width="1.5"/>
+            <text x="415" y="188" fill="#e8edf3" font-size="11" font-weight="700" text-anchor="middle">Go API (Gin)</text>
+            <text x="415" y="204" fill="#8b98a8" font-size="9" text-anchor="middle">JWT check &middot; rate limit</text>
+            <text x="415" y="218" fill="#fb7185" font-size="8.5" text-anchor="middle" opacity="0.85">lookup routes open to guests</text>
+            <!-- postgres -->
+            <rect x="55" y="280" width="180" height="62" rx="9" fill="rgba(52,211,153,0.06)" stroke="#34d399" stroke-width="1.3"/>
+            <text x="145" y="302" fill="#e8edf3" font-size="11" font-weight="700" text-anchor="middle">PostgreSQL</text>
+            <text x="145" y="318" fill="#8b98a8" font-size="9" text-anchor="middle">links, accounts, click stats</text>
+            <text x="145" y="332" fill="#fb7185" font-size="8.5" text-anchor="middle" opacity="0.85">default password &middot; no TLS &middot; port 5432 exposed</text>
+            <!-- redis -->
+            <rect x="285" y="280" width="180" height="62" rx="9" fill="rgba(167,139,250,0.07)" stroke="#a78bfa" stroke-width="1.3"/>
+            <text x="375" y="302" fill="#e8edf3" font-size="11" font-weight="700" text-anchor="middle">Redis cache</text>
+            <text x="375" y="318" fill="#8b98a8" font-size="9" text-anchor="middle">hot short codes, 1 hour</text>
+            <text x="375" y="332" fill="#fb7185" font-size="8.5" text-anchor="middle" opacity="0.85">no password &middot; port 6379 exposed</text>
+            <!-- flows -->
+            <line x1="672" y1="95" x2="502" y2="85" stroke="#fbbf24" stroke-width="1.3" marker-end="url(#ah)" transform="rotate(180 587 90)"/>
+            <line x1="502" y1="120" x2="420" y2="163" stroke="#22d3ee" stroke-width="1.3" marker-end="url(#ah)"/>
+            <text x="468" y="140" fill="#8b98a8" font-size="8.5" text-anchor="middle">HTTPS or HTTP &middot; JSON + Bearer token</text>
+            <line x1="330" y1="210" x2="240" y2="300" stroke="#34d399" stroke-width="1.3" marker-end="url(#ah)"/>
+            <text x="255" y="248" fill="#34d399" font-size="8.5" text-anchor="middle">SQL, no encryption</text>
+            <line x1="375" y1="280" x2="405" y2="233" stroke="#a78bfa" stroke-width="1.3" marker-end="url(#ah)"/>
+            <text x="352" y="262" fill="#a78bfa" font-size="8.5">cache read/write</text>
+            <line x1="500" y1="205" x2="670" y2="115" stroke="#fb7185" stroke-width="1.4" marker-end="url(#ah)"/>
+            <text x="585" y="180" fill="#fb7185" font-size="8.5" text-anchor="middle">302 to any http(s) address, no block list</text>
+          </svg>
+        </div>
+
+        <div class="card">
+          <h3>Attack paths (High), plain-English chains: attacker action, then exploit, then access, then impact</h3>
+          <ul>
+            <li class="flow">Finding 1 &mdash; stranger calls the link-lookup API with number 1, 2, 3 &rarr; no login required, ownership check skipped for guests &rarr; reads every stored long address &rarr; harvests private links and login codes people shortened</li>
+            <li class="flow">Finding 3 + Finding 2 &mdash; attacker reads the default JWT secret from the public compose file &rarr; signs a token for any user &rarr; becomes that user &rarr; lists and deletes their links; with the default database password they may also connect directly</li>
+            <li class="flow">Finding 4 &mdash; attacker creates a link pointing at a fake login page &rarr; sends victims a tolink URL &rarr; victims trust the short domain &rarr; credentials phished under the service's name</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- 02 FINDINGS -->
+      <section class="section sec2" id="s2">
+        <div class="sec-head"><span class="num">02</span><h2>Findings &mdash; STRIDE</h2><span class="lbl">Risk register</span></div>
+        <div class="sec-sub">8 findings ranked by DREAD score. Evidence cites file:line in the clone.</div>
+
+        <div class="filters">
+          <span class="flabel">Filter</span>
+          <button class="fbtn on" data-f="all">All</button>
+          <button class="fbtn" data-f="critical">Critical</button>
+          <button class="fbtn" data-f="high">High</button>
+          <button class="fbtn" data-f="medium">Medium</button>
+          <button class="fbtn" data-f="low">Low</button>
+          <span class="fcount" id="fcount"></span>
+        </div>
+
+        <div class="finding" data-sev="high">
+          <span class="fid">Finding 1</span>
+          <div class="f-body">
+            <div class="tags"><span class="pill">I &middot; information disclosure</span><span class="badge b-high">High</span></div>
+            <h3>Anyone can read any short link's destination without logging in</h3>
+            <p>The lookup and stats routes use "optional auth": the ownership check only runs when a token is present. A guest with no account gets the full record for any link ID, including the original long URL. IDs are simple increasing numbers, so walking 1, 2, 3 harvests the whole table. The QR endpoint is even looser: no auth and no ownership check at all, and it reveals the code for any ID.</p>
+            <p class="ev"><b>Evidence:</b> <span class="mono">backend/internal/handlers/url.go:181-186</span> (check skipped for guests), <span class="mono">url.go:270-275</span> (same in stats), <span class="mono">url.go:170</span> (fetch by ID with no owner filter), <span class="mono">backend/cmd/server/main.go:116</span> (OptionalAuth on the route), <span class="mono">backend/internal/handlers/qr.go:28-37</span> (no auth at all). Reachable by any internet visitor.</p>
+          </div>
+          <div class="f-score"><div class="score s-high">7.8</div><div class="scorelbl">DREAD</div><div class="bar"><div style="width:78%; background:var(--high)"></div></div></div>
+        </div>
+
+        <div class="finding" data-sev="high">
+          <span class="fid">Finding 2</span>
+          <div class="f-body">
+            <div class="tags"><span class="pill">S/E &middot; spoofing &middot; elevation</span><span class="badge b-high">High</span></div>
+            <h3>Shipped defaults: known database password and a Redis with no password, both ports open</h3>
+            <p>The database password defaults to <span class="mono">secret123</span> in both compose files and in the Go config fallback, and PostgreSQL publishes port 5432 to the host. Redis runs with no password and publishes 6379. Anyone who can reach those ports gets the entire link table, user emails, and password hashes, and can poison the redirect cache.</p>
+            <p class="ev"><b>Evidence:</b> <span class="mono">docker-compose.yml</span> (<span class="mono">POSTGRES_PASSWORD: ${DB_PASSWORD:-secret123}</span>, ports <span class="mono">5432:5432</span>, <span class="mono">6379:6379</span>, Redis has no <span class="mono">requirepass</span>), same in <span class="mono">docker-compose.dev.yml</span>, <span class="mono">backend/internal/config/config.go:57</span> (<span class="mono">DBPassword</span> default <span class="mono">secret123</span>). Reachable from the host and, on a cloud VM, possibly the network.</p>
+          </div>
+          <div class="f-score"><div class="score s-high">7.6</div><div class="scorelbl">DREAD</div><div class="bar"><div style="width:76%; background:var(--high)"></div></div></div>
+        </div>
+
+        <div class="finding" data-sev="high">
+          <span class="fid">Finding 3</span>
+          <div class="f-body">
+            <div class="tags"><span class="pill">S &middot; spoofing</span><span class="badge b-high">High</span></div>
+            <h3>A default JWT secret in the public config means login tokens can be forged</h3>
+            <p>Tokens are signed with a shared HMAC key. The key falls back to hardcoded strings when the environment variable is missing: <span class="mono">your-super-secret-jwt-key-change-in-production</span> in the compose file and <span class="mono">dev_jwt_secret_key_for_local_development_only</span> in the Go config. Both are public in this repo. Anyone who deploys without setting a real secret hands attackers the ability to mint a valid token for any user ID.</p>
+            <p class="ev"><b>Evidence:</b> <span class="mono">docker-compose.yml</span> (backend <span class="mono">JWT_SECRET</span> default line), <span class="mono">backend/internal/config/config.go:63</span>, signing at <span class="mono">backend/pkg/utils/jwt.go:44-45</span> (HS256, no issuer or audience checks). Needs the default to be kept, which the README never warns about.</p>
+          </div>
+          <div class="f-score"><div class="score s-high">7.0</div><div class="scorelbl">DREAD</div><div class="bar"><div style="width:70%; background:var(--high)"></div></div></div>
+        </div>
+
+        <div class="finding" data-sev="medium">
+          <span class="fid">Finding 4</span>
+          <div class="f-body">
+            <div class="tags"><span class="pill">T &middot; tampering</span><span class="badge b-med">Medium</span></div>
+            <h3>Redirects go to any web address, including private network ones, with no block list</h3>
+            <p>URL validation only requires an http or https scheme and a host. Anything else passes: addresses inside the company network, tracking pixels, or a fake login page. The API never fetches the address itself, so there is no SSRF into internal services from the API's network position. The real risk is that any anonymous person can register a short link under this service's domain pointing anywhere, which makes phishing look trustworthy. You asked about open redirect and SSRF specifically: open redirect is by design and unguarded; SSRF does not apply because no server-side fetch exists.</p>
+            <p class="ev"><b>Evidence:</b> <span class="mono">backend/internal/services/url_service.go:89-119</span> (only scheme and host are checked), <span class="mono">backend/internal/handlers/url.go:246</span> (302 to the stored address), guest creation allowed at <span class="mono">main.go:110</span>.</p>
+          </div>
+          <div class="f-score"><div class="score s-med">6.4</div><div class="scorelbl">DREAD</div><div class="bar"><div style="width:64%; background:var(--med)"></div></div></div>
+        </div>
+
+        <div class="finding" data-sev="medium">
+          <span class="fid">Finding 5</span>
+          <div class="f-body">
+            <div class="tags"><span class="pill">S &middot; spoofing</span><span class="badge b-med">Medium</span></div>
+            <h3>The API tells every website it is OK to call it, from any origin, with credentials allowed</h3>
+            <p>When the request's origin is not on a small localhost allow list, the code falls back to <span class="mono">Access-Control-Allow-Origin: *</span>, and it always sends <span class="mono">Allow-Credentials: true</span>. Browsers refuse that exact combination for credentialed requests, which limits direct account theft, but auth is Bearer tokens in headers anyway, so the safer read is: the dev-wide-open posture ships to production with no environment check, and any future cookie-based feature would be exposed immediately.</p>
+            <p class="ev"><b>Evidence:</b> <span class="mono">backend/internal/middleware/cors.go:20-30</span>, applied globally at <span class="mono">main.go:86</span> with no ENV guard.</p>
+          </div>
+          <div class="f-score"><div class="score s-med">5.8</div><div class="scorelbl">DREAD</div><div class="bar"><div style="width:58%; background:var(--med)"></div></div></div>
+        </div>
+
+        <div class="finding" data-sev="medium">
+          <span class="fid">Finding 6</span>
+          <div class="f-body">
+            <div class="tags"><span class="pill">T/I &middot; tampering &middot; disclosure</span><span class="badge b-med">Medium</span></div>
+            <h3>The database connection is never encrypted, and the example file admits it</h3>
+            <p>You asked whether <span class="mono">sslmode=disable</span> in <span class="mono">.env.example</span> reflects reality. It does, twice over: the example <span class="mono">DATABASE_URL</span> shows it, and the fallback DSN built from individual settings hardcodes <span class="mono">sslmode=disable</span>, so even a production host that offers TLS will not use it. Link data and credentials cross the network in the clear. The rest of the stack matches: nginx listens on port 80 and the default BASE_URL is http.</p>
+            <p class="ev"><b>Evidence:</b> <span class="mono">.env.example:3</span>, <span class="mono">backend/internal/config/config.go:83</span> (hardcoded in the DSN), <span class="mono">frontend/nginx.conf:2</span>, <span class="mono">config.go:51</span> (http BASE_URL).</p>
+          </div>
+          <div class="f-score"><div class="score s-med">5.6</div><div class="scorelbl">DREAD</div><div class="bar"><div style="width:56%; background:var(--med)"></div></div></div>
+        </div>
+
+        <div class="finding" data-sev="medium">
+          <span class="fid">Finding 7</span>
+          <div class="f-body">
+            <div class="tags"><span class="pill">S/D &middot; spoofing &middot; repudiation</span><span class="badge b-med">Medium</span></div>
+            <h3>Login tokens live in localStorage and are never revoked</h3>
+            <p>The front end keeps the JWT in localStorage, readable by any injected script. On the server side there is no revocation: logout just tells the browser to drop the token, and a password change does not invalidate old tokens, so a stolen or forged token stays good for its full 24-hour life.</p>
+            <p class="ev"><b>Evidence:</b> <span class="mono">frontend/src/stores/auth.store.ts:18,26</span>, <span class="mono">frontend/src/services/api.ts:13</span> (Bearer from localStorage), no deny list anywhere in <span class="mono">backend/pkg/utils/jwt.go</span> or <span class="mono">backend/internal/handlers/auth.go</span> logout path.</p>
+          </div>
+          <div class="f-score"><div class="score s-med">5.4</div><div class="scorelbl">DREAD</div><div class="bar"><div style="width:54%; background:var(--med)"></div></div></div>
+        </div>
+
+        <div class="finding" data-sev="low">
+          <span class="fid">Finding 8</span>
+          <div class="f-body">
+            <div class="tags"><span class="pill">E/D &middot; elevation &middot; denial</span><span class="badge b-low">Low</span></div>
+            <h3>Visitor browsing data is kept forever, and the rate limiter trusts a forgeable header</h3>
+            <p>Every redirect stores the visitor's IP, browser type, and referring page with no retention limit and no user-facing way to clear it. Separately, the rate limiter counts requests per client IP taken from proxy headers, and Gin trusts all proxies by default, so an attacker who sets <span class="mono">X-Forwarded-For</span> gets a fresh budget on every request. Both are abuse enablers for the open registration in Finding 4.</p>
+            <p class="ev"><b>Evidence:</b> <span class="mono">backend/internal/handlers/url.go:242</span> (records IP, UA, referer), <span class="mono">backend/migrations/003_create_click_stats_table.up.sql</span> (no retention), <span class="mono">backend/internal/middleware/rate_limit.go:51+</span> keyed on <span class="mono">ClientIP()</span> with no <span class="mono">SetTrustedProxies</span> call anywhere in <span class="mono">main.go</span>.</p>
+          </div>
+          <div class="f-score"><div class="score s-low">4.2</div><div class="scorelbl">DREAD</div><div class="bar"><div style="width:42%; background:var(--low)"></div></div></div>
+        </div>
+
+      <!-- 03 RECOMMENDATIONS -->
+      </section>
+      <section class="section sec3" id="s3">
+        <div class="sec-head"><span class="num">03</span><h2>Recommendations</h2><span class="lbl">Action plan</span></div>
+        <div class="sec-sub">Concrete fixes keyed to finding IDs, ordered by severity.</div>
+
+        <div class="filters">
+          <span class="flabel">Filter</span>
+          <button class="fbtn on" data-g="all">All</button>
+          <button class="fbtn" data-g="critical">Critical</button>
+          <button class="fbtn" data-g="high">High</button>
+          <button class="fbtn" data-g="medium">Medium</button>
+          <button class="fbtn" data-g="low">Low</button>
+          <span class="fcount" id="gcount"></span>
+        </div>
+
+        <div class="rec" data-sev="high">
+          <div class="ref">Finding 1 &middot; high</div>
+          <h3>Require a login on the lookup routes and filter by owner</h3>
+          <p>In <span class="mono">main.go</span>, change <span class="mono">urls.GET("/:id", OptionalAuth(), ...)</span> and the stats route to <span class="mono">RequireAuth()</span>, and in <span class="mono">url.go GetURL/GetURLStats</span> make the ownership check unconditional: reject whenever <span class="mono">shortURL.UserID</span> is set and differs from the caller, including for guests. Add the same <span class="mono">RequireAuth()</span> to <span class="mono">qr.go GetQRCode</span>. Public redirect by short code can stay open, that is the product.</p>
+        </div>
+
+        <div class="rec" data-sev="high">
+          <div class="ref">Finding 2 &middot; high</div>
+          <h3>Drop the default password and stop publishing the database and cache ports</h3>
+          <p>Remove the <span class="mono">:-secret123</span> and <span class="mono">:-urlshort</span> fallbacks from both compose files and from <span class="mono">config.go</span> so the server refuses to start without a real password. Delete the <span class="mono">ports:</span> entries for postgres and redis (the containers share a Docker network, they do not need host ports), and add <span class="mono">requirepass</span> to the Redis command line.</p>
+        </div>
+
+        <div class="rec" data-sev="high">
+          <div class="ref">Finding 3 &middot; high</div>
+          <h3>Fail fast when no real JWT secret is set</h3>
+          <p>In <span class="mono">config.Load()</span>, if <span class="mono">JWT_SECRET</span> is missing or under 32 characters and <span class="mono">ENV=production</span>, exit with a clear error instead of falling back to the hardcoded string. Add <span class="mono">iss</span> and <span class="mono">aud</span> claims in <span class="mono">jwt.go</span> and check them on validation so tokens from another service cannot be replayed.</p>
+        </div>
+
+        <div class="rec" data-sev="medium">
+          <div class="ref">Finding 4 &middot; medium</div>
+          <h3>Add a block list to URL validation and an abuse report route</h3>
+          <p>In <span class="mono">url_service.go ValidateURL</span>, resolve the host and reject loopback, private, and link-local ranges, and reject hosts that look like the service's own domain. Consider requiring login to create links, or a much stricter guest rate limit, and publish an abuse contact so phishing reports can reach you.</p>
+        </div>
+
+        <div class="rec" data-sev="medium">
+          <div class="ref">Finding 5 &middot; medium</div>
+          <h3>Only send permissive CORS headers in development</h3>
+          <p>In <span class="mono">cors.go</span>, gate the <span class="mono">*</span> fallback behind <span class="mono">cfg.Env != "production"</span> and drop <span class="mono">Allow-Credentials: true</span>, since auth is header-based and nothing uses cookies. In production, echo back only the configured frontend origin.</p>
+        </div>
+
+        <div class="rec" data-sev="medium">
+          <div class="ref">Finding 6 &middot; medium</div>
+          <h3>Encrypt the database connection and serve HTTPS</h3>
+          <p>Change the fallback DSN in <span class="mono">config.go:83</span> to <span class="mono">sslmode=require</span> (or verify-full with a root certificate on managed hosts), update <span class="mono">.env.example</span> to match, and terminate TLS at nginx so the browser-to-API leg is encrypted too. Set <span class="mono">BASE_URL</span> to the https address so generated short links and QR codes are correct.</p>
+        </div>
+
+        <div class="rec" data-sev="medium">
+          <div class="ref">Finding 7 &middot; medium</div>
+          <h3>Shorten token life and add real revocation</h3>
+          <p>Cut <span class="mono">JWT_EXPIRY_HOURS</span> from 24 to 1, move the token to an httpOnly cookie or keep it in memory only, and add a per-user <span class="mono">tokens_valid_after</span> column checked in the auth middleware so logout and password change invalidate existing tokens.</p>
+        </div>
+
+        <div class="rec" data-sev="low">
+          <div class="ref">Finding 8 &middot; low</div>
+          <h3>Cap click-data retention and fix the rate limiter's trust</h3>
+          <p>Set <span class="mono">router.SetTrustedProxies(nil)</span> (or the nginx container address) in <span class="mono">main.go</span>, and add a job to the existing cleanup worker that deletes <span class="mono">click_stats</span> rows older than 30 days. Keep only a hashed or truncated IP if stats do not need the full address.</p>
+        </div>
+
+        <div class="callout" style="margin-top:1.2rem">
+          <b>Clean surfaces:</b> passwords are bcrypt-hashed at cost 12, all SQL goes through GORM parameter binding (no injection found), short codes use a real random source, and there are no <span class="mono">eval</span> or <span class="mono">subprocess</span> sinks anywhere in the backend. The app is not agentic, so no AI-specific threats apply.
+        </div>
+      </section>
+
+      <div class="foot">tolink &middot; STRIDE / DREAD threat model &middot; machine copy: threat-model.yaml</div>
+    </main>
+  </div>
+</div>
+
+<script>
+  // scroll-spy: highlight the sidebar tab for the section in view
+  const links = { s1: document.getElementById('nav-s1'), s2: document.getElementById('nav-s2'), s3: document.getElementById('nav-s3') };
+  const secs = ['s1','s2','s3'].map(id => document.getElementById(id));
+  function spy() {
+    let cur = 0;
+    const y = window.scrollY + window.innerHeight * 0.35;
+    secs.forEach((sec, i) => { if (sec.offsetTop <= y) cur = i; });
+    Object.values(links).forEach(a => a.classList.remove('active'));
+    links['s' + (cur + 1)].classList.add('active');
+  }
+  window.addEventListener('scroll', spy, { passive: true });
+  spy();
+
+  // severity filter
+  const findings = [...document.querySelectorAll('.finding')];
+  const countEl = document.getElementById('fcount');
+  const counts = {};
+  findings.forEach(f => counts[f.dataset.sev] = (counts[f.dataset.sev] || 0) + 1);
+  function apply(f) {
+    findings.forEach(el => { el.style.display = (f === 'all' || el.dataset.sev === f) ? '' : 'none'; });
+    document.querySelectorAll('.fbtn[data-f]').forEach(b => b.classList.toggle('on', b.dataset.f === f));
+    const totalF = findings.length;
+    countEl.textContent = (f === 'all') ? totalF + ' of ' + totalF + ' findings' : counts[f] + ' of ' + totalF + ' \u00b7 ' + f;
+  }
+  const recs = [...document.querySelectorAll('.rec')];
+  const gcountEl = document.getElementById('gcount');
+  const gcounts = {};
+  recs.forEach(r => gcounts[r.dataset.sev] = (gcounts[r.dataset.sev] || 0) + 1);
+  function applyG(g) {
+    recs.forEach(el => { el.style.display = (g === 'all' || el.dataset.sev === g) ? '' : 'none'; });
+    document.querySelectorAll('.fbtn[data-g]').forEach(b => b.classList.toggle('on', b.dataset.g === g));
+    const totalR = recs.length;
+    gcountEl.textContent = (g === 'all') ? totalR + ' of ' + totalR + ' recommendations' : gcounts[g] + ' of ' + totalR + ' \u00b7 ' + g;
+  }
+  document.querySelectorAll('.fbtn[data-f]').forEach(b => b.addEventListener('click', () => apply(b.dataset.f)));
+  document.querySelectorAll('.fbtn[data-g]').forEach(b => b.addEventListener('click', () => applyG(b.dataset.g)));
+  apply('all');
+  applyG('all');
+</script>
+</body>
+</html>

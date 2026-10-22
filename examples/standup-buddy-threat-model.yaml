@@ -1,0 +1,148 @@
+project: standup-buddy (StandUp Buddy)
+date: 2026-10-21
+model: z-ai/glm-5.3 (Hermes Agent)
+repo: github.com/Maxiviper117/standup-buddy
+app_type: "desktop (NativePHP v2 / Laravel 13 + Electron + Svelte-Inertia) — NOT a client/server web app"
+agentic: false
+languages: [php, typescript, svelte, javascript]
+components:
+  - name: "Electron main + tray/menu bar"
+    type: desktop_shell
+    trust_boundary: local_machine
+  - name: "Svelte renderer window (Inertia pages: General, Reminders, Timing, Notifications, Stats, About)"
+    type: frontend
+    trust_boundary: local_machine
+  - name: "Internal Laravel HTTP server (127.0.0.1, routes/web.php)"
+    type: api_backend
+    trust_boundary: local_machine
+  - name: "SQLite database (sessions/cache/queue; SESSION_DRIVER=database, DB_CONNECTION=sqlite)"
+    type: datastore
+    trust_boundary: local_machine
+  - name: "NativePHP auto-updater (DigitalOcean Spaces / S3 / GitHub providers)"
+    type: external_service
+    trust_boundary: internet
+  - name: "Laradumps dev socket (ds() calls)"
+    type: dev_tooling
+    trust_boundary: local_machine
+data_flows:
+  - from: renderer
+    to: internal_laravel_server
+    data_type: "Inertia page GETs + POST /open-window (window size/pos)"
+    protocol: "HTTP (plain, localhost)"
+    trust_boundary_crossed: "renderer to server"
+  - from: internal_laravel_server
+    to: sqlite_file
+    data_type: "sessions, cache, queue jobs (no user data persisted yet)"
+    protocol: file
+    trust_boundary_crossed: "server to disk"
+  - from: updater
+    to: do_spaces_or_s3
+    data_type: "update packages downloaded and executed"
+    protocol: HTTPS
+    trust_boundary_crossed: "local_machine to internet"
+  - from: electron_tray
+    to: window_manager
+    data_type: "menu clicks leading to OpenWindow action (800x800)"
+    protocol: ipc
+    trust_boundary_crossed: "none (in-process)"
+trust_boundaries:
+  - "local machine vs internal localhost server"
+  - "app vs internet (auto-updater)"
+findings:
+  - id: TM-001
+    stride_category: "E (elevation of privilege via unsigned auto-update)"
+    title: "Auto-updater enabled by default with no signed-update requirement"
+    severity: medium
+    dread_score: 5.6
+    dread_breakdown: {damage: 10, reproducibility: 4, exploitability: 4, affected_users: 7, discoverability: 3}
+    location: {file: config/nativephp.php, line: 102}
+    description: "NATIVEPHP_UPDATER_ENABLED defaults to true and the default provider is spaces (DigitalOcean, config/nativephp.php:109). Updates are downloaded from cloud storage and executed; the app ships no code-signing/signature verification gate, and updater credentials live in env vars that the build cleanup list (config/nativephp.php:63-78) strips only from the bundled .env, not from the developer machine. Whoever controls the Spaces/S3 bucket (or intercepts the endpoint) can push arbitrary code to every install."
+    attack_scenario: "Attacker leaks or phishes the DO_SPACES credentials (or gains write access to the update path), uploads a malicious update package; the updater on every user machine downloads and runs it, giving full remote code execution on all installs."
+    remediation: "Set NATIVEPHP_UPDATER_ENABLED=false until a signed-release process exists; require signature verification (electron-updater signature + code signing certs) before installing; keep updater keys out of the repo and rotate the Spaces/S3 keys."
+    attack_path:
+      - "compromise update storage (Spaces/S3 keys)"
+      - "upload malicious update package"
+      - "updater downloads and executes it on every install"
+      - "remote code execution on all user machines"
+  - id: TM-002
+    stride_category: "I (information disclosure)"
+    title: "Debug mode shipped on in the .env template"
+    severity: medium
+    dread_score: 5.4
+    dread_breakdown: {damage: 5, reproducibility: 6, exploitability: 4, affected_users: 5, discoverability: 7}
+    location: {file: .env.example, line: 4}
+    description: ".env.example ships APP_ENV=local and APP_DEBUG=true (.env.example:2,4). If bundled as-is (the NativePHP cleanup list does not strip APP_DEBUG), every error on the internal server renders a full Laravel debug page with stack traces, env values and file paths. config/app.php:42 defaults debug to false, so exposure requires carrying the template .env into production."
+    attack_scenario: "A local process (or anything that can reach the localhost port) triggers an exception and reads the debug page: source snippets, paths, and env values."
+    remediation: "Build production with APP_DEBUG=false and APP_ENV=production; strip APP_DEBUG in the NativePHP cleanup_env_keys list (config/nativephp.php:63) so it cannot ship enabled."
+    attack_path:
+      - "local process scans localhost, finds internal port"
+      - "triggers exception, debug stack trace renders"
+      - "reads env values and file paths"
+  - id: TM-003
+    stride_category: "S/D (spoofing + denial of service)"
+    title: "POST /open-window opens windows on demand with no auth or rate limit"
+    severity: medium
+    dread_score: 5.2
+    dread_breakdown: {damage: 3, reproducibility: 8, exploitability: 5, affected_users: 4, discoverability: 6}
+    location: {file: routes/web.php, line: 17}
+    description: "routes/web.php:17 exposes POST /open-window to GeneralController::openWindow (app/Http/Controllers/GeneralController.php:19-25) which calls App\\Actions\\OpenWindow (app/Actions/OpenWindow.php:10-23) and opens an 800x800 window. No auth, no throttle middleware. CSRF blocks remote web pages (standard web group), but any local process can GET a page, harvest the CSRF token and loop the endpoint, spawning unlimited windows."
+    attack_scenario: "Local malware harvests a CSRF token from a GET page, then POSTs /open-window in a loop: window flood / UI spoofing nuisance. No data exposure."
+    remediation: "Drop the route and keep window opening in the Electron menu path (the NativeAppServiceProvider / HandleOpenWindowMenuItem path already does this without HTTP); if kept, add rate limiting and bind it to the tray/menu event only."
+    attack_path:
+      - "local process finds internal port"
+      - "GET page, harvest CSRF token"
+      - "loop POST /open-window"
+      - "window flood / spoofed UI on the user desktop"
+  - id: TM-004
+    stride_category: "S (session hijack surface)"
+    title: "Session cookie over plain HTTP, unencrypted, no Secure flag"
+    severity: medium
+    dread_score: 4.0
+    dread_breakdown: {damage: 4, reproducibility: 5, exploitability: 3, affected_users: 3, discoverability: 5}
+    location: {file: config/session.php, line: 63}
+    description: "SESSION_ENCRYPT=false (.env.example:32) and SESSION_SECURE unset; the internal Inertia server speaks plain HTTP on localhost, so the session cookie (SESSION_DRIVER=database) is cleartext on the wire and in the SQLite sessions table. Data at stake today is only CSRF/session state (no user data is persisted anywhere in the app), so impact is low but the surface exists for anything rendered later."
+    attack_scenario: "Another local user or process reads the SQLite sessions table (storage path) or sniffs loopback traffic to replay the session."
+    remediation: "Set SESSION_ENCRYPT=true; document that nothing sensitive should ride these pages until then; keep DB file perms tight (0600 on database.sqlite)."
+    attack_path:
+      - "local access to storage/database.sqlite"
+      - "read sessions table"
+      - "replay cookie"
+  - id: TM-005
+    stride_category: "D/I (denial of service + debug leak)"
+    title: "Dev-only ds() debug calls run in the boot path"
+    severity: low
+    dread_score: 3.8
+    dread_breakdown: {damage: 2, reproducibility: 7, exploitability: 3, affected_users: 4, discoverability: 4}
+    location: {file: app/Providers/NativeAppServiceProvider.php, line: 22}
+    description: "boot() calls ds() (app/Providers/NativeAppServiceProvider.php:22) and both menu-bar listeners call ds() (app/Listeners/HandleMenuBarClick.php:12, app/Listeners/HandleMenuBarDoubleClick.php:14). ds() comes from laradumps/laradumps which is require-dev (composer.json:21): a production build without dev dependencies fatals on boot; with dev dependencies, debug payloads go to a local Laradumps socket."
+    attack_scenario: "Production build without dev deps: undefined-function error during boot, app fails to start for every user."
+    remediation: "Remove the ds() calls (or guard with if(app()->environment('local'))); verify a --no-dev production build boots."
+    attack_path:
+      - "production bundle without dev deps"
+      - "ds() undefined at boot"
+      - "app crashes on launch"
+  - id: TM-006
+    stride_category: "E (unauthenticated internal surface, by design)"
+    title: "All six pages plus health endpoint served without any auth"
+    severity: low
+    dread_score: 3.8
+    dread_breakdown: {damage: 2, reproducibility: 5, exploitability: 4, affected_users: 3, discoverability: 5}
+    location: {file: routes/web.php, line: 11}
+    description: "routes/web.php:11-17 registers all routes publicly; the User auth model (app/Models/User.php) is scaffolded but unused and no login routes exist. For a single-user desktop app bound to 127.0.0.1 this is normal NativePHP shape, but it means anything that can reach the port (other local accounts on multi-user Windows hosts) can read every page and drive every POST. Noted as reachability context for TM-002 and TM-003 rather than a standalone bug."
+    attack_scenario: "Another local account reads the settings pages and probes the health endpoint (/up) and the open-window route."
+    remediation: "Acceptable for a tray app; never bind the internal server to a non-loopback interface (do not set host config to 0.0.0.0)."
+    attack_path:
+      - "another local user reaches the port"
+      - "reads all settings pages"
+      - "no data to steal today (nothing persisted)"
+notes: |
+  App is a single-user standing-desk reminder tray app (PRD.md section 1), not
+  a team standup-order web app: no team/randomization logic exists; pages are
+  static settings UIs whose state ($state in Svelte) is never persisted to
+  the database or localStorage, so every setting resets on restart. Not
+  agentic: no LLM calls anywhere; ASTRIDE evaluated and not applicable.
+  Vendor (nativephp/desktop) Electron window security config was not
+  inspected (vendor/ absent in the repo); NativePHP defaults assumed.
+  All four phases (DFD, STRIDE, DREAD, recommendations) ran in one pass at
+  the user's explicit request; the usual diagram-confirmation gate was
+  skipped by instruction, not silently.

@@ -1,0 +1,104 @@
+# threat-model.yaml — machine-readable copy of the tolink threat model
+# Target: github.com/tuantoquq/tolink (cloned 2026-10-21, HEAD of default branch)
+# Method: STRIDE per trust boundary, DREAD scoring (0-10 avg), file:line evidence
+app:
+  name: tolink
+  repo: https://github.com/tuantoquq/tolink
+  description: "URL shortener: Go (Gin) API, React/TypeScript front end served by nginx, PostgreSQL, Redis cache, JWT auth, Docker Compose."
+  is_agentic: false
+  languages: [go, typescript, sql]
+  zones:
+    - browser-to-api        # visitor's browser -> nginx -> Go API, Bearer JWT
+    - api-to-data           # Go API -> PostgreSQL and Redis
+    - outbound-redirect     # API -> 302 to arbitrary external http(s) URL
+scope_notes:
+  - "JWT protects only: list own links, delete link, get own account, change password. Create/lookup/stats/QR/redirect work without it."
+  - "Open redirect applies (any http/https host accepted, no block list). SSRF does not apply: the API never fetches the target URL, it only 302s the visitor's browser."
+  - "sslmode=disable in .env.example reflects the real setup: the fallback DSN in config.go:83 hardcodes sslmode=disable."
+  - "Default DB password secret123 in both compose files and config.go:57; Redis has no password; ports 5432/6379 published to host."
+findings:
+  - id: "1"
+    title: "Anyone can read any short link's destination without logging in"
+    stride: [information-disclosure]
+    severity: high
+    dread: { damage: 8, reproducibility: 9, exploitability: 9, affected_users: 6, discoverability: 7, average: 7.8 }
+    evidence:
+      - "backend/internal/handlers/url.go:181-186   # ownership check skipped for guests"
+      - "backend/internal/handlers/url.go:270-275  # same in stats"
+      - "backend/cmd/server/main.go:116            # OptionalAuth on GET /urls/:id"
+      - "backend/internal/handlers/qr.go:28-37     # QR endpoint: no auth, no ownership check"
+  - id: "2"
+    title: "Default DB password and passwordless Redis, both ports published to host"
+    stride: [spoofing, elevation-of-privilege]
+    severity: high
+    dread: { damage: 9, reproducibility: 9, exploitability: 6, affected_users: 6, discoverability: 8, average: 7.6 }
+    evidence:
+      - "docker-compose.yml                        # DB_PASSWORD default secret123, ports 5432/6379"
+      - "docker-compose.dev.yml"
+      - "backend/internal/config/config.go:57"
+  - id: "3"
+    title: "Default JWT secret allows forging login tokens"
+    stride: [spoofing]
+    severity: high
+    dread: { damage: 8, reproducibility: 8, exploitability: 7, affected_users: 6, discoverability: 6, average: 7.0 }
+    evidence:
+      - "docker-compose.yml                        # JWT_SECRET default your-super-secret-jwt-key-change-in-production"
+      - "backend/internal/config/config.go:63      # dev_jwt_secret_key_for_local_development_only"
+      - "backend/pkg/utils/jwt.go:44-53            # HS256, no iss/aud checks"
+  - id: "4"
+    title: "Outbound redirect accepts any web address, no block list"
+    stride: [tampering]
+    severity: medium
+    dread: { damage: 6, reproducibility: 9, exploitability: 9, affected_users: 8, discoverability: 6, average: 7.6 }
+    note: "scored down from raw math for a URL shortener where redirect is the core feature; residual risk is phishing under the service's domain"
+    evidence:
+      - "backend/internal/services/url_service.go:89-119  # scheme+host check only"
+      - "backend/internal/handlers/url.go:246             # 302 to stored URL"
+      - "backend/cmd/server/main.go:110                   # guests may create links"
+  - id: "5"
+    title: "CORS falls back to wildcard with Allow-Credentials in all environments"
+    stride: [spoofing]
+    severity: medium
+    dread: { damage: 5, reproducibility: 7, exploitability: 6, affected_users: 7, discoverability: 6, average: 5.8 }
+    evidence:
+      - "backend/internal/middleware/cors.go:20-30"
+      - "backend/cmd/server/main.go:86"
+  - id: "6"
+    title: "Database connection never uses TLS (sslmode=disable hardcoded)"
+    stride: [tampering, information-disclosure]
+    severity: medium
+    dread: { damage: 4, reproducibility: 8, exploitability: 5, affected_users: 6, discoverability: 6, average: 5.6 }
+    evidence:
+      - "backend/internal/config/config.go:83"
+      - ".env.example:3"
+      - "frontend/nginx.conf:2"
+      - "backend/internal/config/config.go:51      # http BASE_URL"
+  - id: "7"
+    title: "JWT kept in localStorage, never revoked on logout or password change"
+    stride: [spoofing, repudiation]
+    severity: medium
+    dread: { damage: 6, reproducibility: 6, exploitability: 6, affected_users: 6, discoverability: 5, average: 5.4 }
+    evidence:
+      - "frontend/src/stores/auth.store.ts:18,26"
+      - "frontend/src/services/api.ts:13"
+      - "backend/internal/handlers/auth.go (logout)  # client-side only"
+  - id: "8"
+    title: "Click tracking stores visitor IP/UA/referer forever; rate limiter trusts X-Forwarded-For"
+    stride: [elevation-of-privilege, denial-of-service]
+    severity: low
+    dread: { damage: 4, reproducibility: 7, exploitability: 6, affected_users: 5, discoverability: 4, average: 4.2 }
+    evidence:
+      - "backend/internal/handlers/url.go:242"
+      - "backend/migrations/003_create_click_stats_table.up.sql"
+      - "backend/internal/middleware/rate_limit.go:51  # keyed on ClientIP, no SetTrustedProxies"
+recommendations:
+  - { ref: "1", fix: "RequireAuth on GET /urls/:id and /:id/stats; unconditional ownership check; auth on QR endpoint" }
+  - { ref: "2", fix: "Remove default passwords from compose + config, unpublish 5432/6379, requirepass on Redis" }
+  - { ref: "3", fix: "Refuse to start without a real JWT_SECRET in production; add iss/aud claims" }
+  - { ref: "4", fix: "Resolve and reject private/loopback hosts, add abuse reporting, stricter guest limits" }
+  - { ref: "5", fix: "Gate wildcard CORS to development; drop Allow-Credentials" }
+  - { ref: "6", fix: "sslmode=require in fallback DSN and .env.example; TLS at nginx; https BASE_URL" }
+  - { ref: "7", fix: "Shorter token life, httpOnly cookie or memory-only, per-user token invalidation" }
+  - { ref: "8", fix: "SetTrustedProxies, retention job for click_stats, truncate/hash stored IPs" }
+severity_counts: { critical: 0, high: 3, medium: 4, low: 1 }
+total_findings: 8
