@@ -396,7 +396,10 @@ findings.
   instead.
 - **Verify generated HTML structurally after writing:** count div
   open/close tags for balance, count finding/rec cards, check for
-  duplicate IDs — one quick python check catches the breakage that
+  duplicate IDs, `node --check` the inline script, and CLICK-TEST the
+  filter pills — a report shipped with unbound filter buttons looked
+  fine but did nothing (bindings for `.fbtn[data-f]` were lost in a
+  patch). One quick python/node check catches the breakage that
   visual review misses.
 - **Plain English everywhere except Evidence lines.** The user rejects
   jargon in report prose: rewrite tables as questions a non-engineer
