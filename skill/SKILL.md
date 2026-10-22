@@ -389,7 +389,7 @@ findings.
   slightly larger than the header height, and keep the header one
   compact row — otherwise section tops slide under the blurred bar and
   the user reports content "hidden" while scrolling. Same for the
-  sticky sidebar: hardcode `padding-top` on the sidebar (~1.1rem) so
+  sticky sidebar: hardcode `padding-top` on the sidebar (~2.4rem) so
   the first tab clears the header instead of sliding under it.
 - **Scroll-spy via IntersectionObserver desyncs on tall sections**
   (the findings section spans several viewports, so no section
